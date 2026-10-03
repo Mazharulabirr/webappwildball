@@ -1,3 +1,10 @@
 # Local browser state produced by preview tooling
 chrome-preview-profile/
 client-preview/
+node_modules/
+.next/
+next-dev.log
+next-dev-error.log
+
+.vercel
+.env*
