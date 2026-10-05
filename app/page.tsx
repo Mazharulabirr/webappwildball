@@ -129,9 +129,14 @@ function AuthForm({ signup, switchMode, submit }: { signup: boolean; switchMode:
     if (!email || !password || (signup && !username)) { setError("Please fill in every field."); return; }
     if (signup && password.length < 6) { setError("Password must be at least 6 characters."); return; }
     setError(""); setLoading(true);
-    const message = await submit(email, password, username);
-    if (!message.startsWith("Account created") && !message.startsWith("Welcome back")) setError(message);
-    setLoading(false);
+    try {
+      const message = await submit(email, password, username);
+      if (!message.startsWith("Account created") && !message.startsWith("Welcome back")) setError(message);
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Could not reach the account service. Please try again.");
+    } finally {
+      setLoading(false);
+    }
   };
   return <div className="auth-form"><h2>{signup ? "Create account" : "Log in"}</h2><p>{signup ? "Join the Wildball community." : "Welcome back to Wildball."}</p>{signup && <label>Username<input value={username} onChange={e => setUsername(e.target.value)} placeholder="your.handle" autoComplete="username"/></label>}<label>Email<input value={email} onChange={e => setEmail(e.target.value)} type="email" placeholder="you@email.com" autoComplete="email"/></label><label>Password<input value={password} onChange={e => setPassword(e.target.value)} type="password" placeholder={signup ? "Create a password" : "Password"} autoComplete={signup ? "new-password" : "current-password"}/></label>{error && <p className="auth-error" role="alert">{error}</p>}<button className="auth-submit" disabled={loading} onClick={handleSubmit}>{loading ? "Please wait..." : signup ? "Create account" : "Log in"}</button><button className="auth-switch" onClick={() => { setError(""); switchMode(); }}>{signup ? <>Already a member? <b>Log in</b></> : <>New here? <b>Create an account</b></>}</button></div>;
 }
