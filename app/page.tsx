@@ -44,7 +44,7 @@ export default function Home() {
   const note = (text: string) => { setToast(text); window.setTimeout(() => setToast(""), 2200); };
   const toggleFollow = (name: string) => setFollowing(old => old.includes(name) ? old.filter(x => x !== name) : [...old, name]);
   const toggleLike = (i: number) => setLiked(old => old.includes(i) ? old.filter(x => x !== i) : [...old, i]);
-  const openAuth = () => { setProfile(false); setAuth("login"); };
+  const openAuth = () => { window.location.assign("/login"); };
   useEffect(() => {
     const loadProfile = async (currentUser: User | null) => {
       if (!currentUser) { setProfileData(null); return; }
