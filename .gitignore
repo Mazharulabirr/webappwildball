@@ -5,6 +5,7 @@ node_modules/
 .next/
 next-dev.log
 next-dev-error.log
+demo-accounts.local.csv
 
 .vercel
 .env*
