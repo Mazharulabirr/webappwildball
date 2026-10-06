@@ -7,6 +7,7 @@ import type { User } from "@supabase/supabase-js";
 type IconName = "ball" | "home" | "people" | "search" | "live" | "plus" | "heart" | "comment" | "share" | "more" | "volume" | "profile" | "inbox";
 type Profile = { id: string; username: string; display_name: string | null; bio: string | null; location: string | null; avatar_path: string | null };
 type LivePost = { id: string; author_id: string; caption: string; video_path: string; poster_path: string | null; created_at: string; author?: { username: string; display_name: string | null } };
+type DemoProfile = Pick<Profile, "id" | "username" | "display_name" | "location">;
 const paths: Record<IconName, string> = {
   ball: '<circle cx="12" cy="12" r="8.5"/><path d="M3.8 12h16.4M12 3.5c2.6 2.3 3.8 5.2 3.8 8.5S14.6 18.2 12 20.5M12 3.5C9.4 5.8 8.2 8.7 8.2 12s1.2 6.2 3.8 8.5"/>',
   home: '<path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1Z"/>',
@@ -42,9 +43,20 @@ export default function Home() {
   const [profileData, setProfileData] = useState<Profile | null>(null);
   const [editingProfile, setEditingProfile] = useState(false);
   const [profileDraft, setProfileDraft] = useState({ display_name: "", bio: "", location: "" });
-  const [selectedVideo, setSelectedVideo] = useState<File | null>(null), [postCaption, setPostCaption] = useState(""), [uploading, setUploading] = useState(false), [livePosts, setLivePosts] = useState<LivePost[]>([]);
+  const [selectedVideo, setSelectedVideo] = useState<File | null>(null), [postCaption, setPostCaption] = useState(""), [uploading, setUploading] = useState(false), [livePosts, setLivePosts] = useState<LivePost[]>([]), [demoProfiles, setDemoProfiles] = useState<DemoProfile[]>([]);
   const note = (text: string) => { setToast(text); window.setTimeout(() => setToast(""), 2200); };
   const toggleFollow = (name: string) => setFollowing(old => old.includes(name) ? old.filter(x => x !== name) : [...old, name]);
+  const toggleDemoFollow = async (demo: DemoProfile) => {
+    if (!user) { note("Log in to follow a player"); openAuth(); return; }
+    const alreadyFollowing = following.includes(demo.username);
+    const request = alreadyFollowing
+      ? supabase.from("follows").delete().eq("follower_id", user.id).eq("following_id", demo.id)
+      : supabase.from("follows").insert({ follower_id: user.id, following_id: demo.id });
+    const { error } = await request;
+    if (error) { note(error.message); return; }
+    setFollowing(old => alreadyFollowing ? old.filter(name => name !== demo.username) : [...old, demo.username]);
+    note(alreadyFollowing ? `Unfollowed @${demo.username}` : `Following @${demo.username}`);
+  };
   const toggleLike = (i: number) => setLiked(old => old.includes(i) ? old.filter(x => x !== i) : [...old, i]);
   const openAuth = () => { window.location.assign("/login"); };
   const loadLivePosts = async () => {
@@ -55,6 +67,10 @@ export default function Home() {
     const { data: authors } = await supabase.from("profiles").select("id, username, display_name").in("id", authorIds);
     const authorMap = new Map((authors || []).map(author => [author.id, author]));
     setLivePosts(posts.map(post => ({ ...post, author: authorMap.get(post.author_id) })));
+  };
+  const loadDemoProfiles = async () => {
+    const { data } = await supabase.from("profiles").select("id, username, display_name, location").like("username", "courtvision%").order("username", { ascending: true }).limit(10);
+    setDemoProfiles((data || []) as DemoProfile[]);
   };
   const publishPost = async () => {
     if (!user) { note("Log in to post a video"); openAuth(); return; }
@@ -87,7 +103,16 @@ export default function Home() {
     const { data: subscription } = supabase.auth.onAuthStateChange((_event, session) => { setUser(session?.user ?? null); void loadProfile(session?.user ?? null); });
     return () => subscription.subscription.unsubscribe();
   }, [supabase]);
-  useEffect(() => { void loadLivePosts(); }, [supabase]);
+  useEffect(() => { void loadLivePosts(); void loadDemoProfiles(); }, [supabase]);
+  useEffect(() => {
+    const loadFollowedDemoProfiles = async () => {
+      if (!user || !demoProfiles.length) return;
+      const demoById = new Map(demoProfiles.map(demo => [demo.id, demo.username]));
+      const { data } = await supabase.from("follows").select("following_id").eq("follower_id", user.id).in("following_id", [...demoById.keys()]);
+      setFollowing((data || []).map(row => demoById.get(row.following_id)).filter((name): name is string => Boolean(name)));
+    };
+    void loadFollowedDemoProfiles();
+  }, [demoProfiles, supabase, user]);
   const submitAuth = async (email: string, password: string, username: string): Promise<string> => {
     if (auth === "signup") {
       const normalizedUsername = username.trim().toLowerCase();
@@ -141,10 +166,10 @@ export default function Home() {
             <div className="copy"><div className="creator"><img src={`https://i.pravatar.cc/80?img=${p[2]}`} alt={p[0]}/><span><b>{p[0]}</b><small>{p[1]}</small></span><button className={`follow ${isFollowing ? "on" : ""}`} onClick={() => toggleFollow(p[0])}>{isFollowing ? "Following" : "Follow"}</button></div><h1>{p[3]} <em><Icon name="ball"/></em></h1><p>{p[4]} <b>{p[5]}</b></p><button className="audio" onClick={() => note("Original sound selected")}><Icon name="volume"/>original sound · {p[0]}</button></div>
             <div className="actions"><button className="creator-action" aria-label={`Follow ${p[0]}`} onClick={() => toggleFollow(p[0])}><img src={`https://i.pravatar.cc/80?img=${p[2]}`} alt=""/><i><Icon name="plus"/></i></button><button className={`like ${isLiked ? "liked" : ""}`} aria-label="Like post" onClick={() => toggleLike(i)}><strong><Icon name="heart"/></strong><small>{8 + i * 3}.{i % 9}K</small></button><button className="comment" aria-label="Comment" onClick={() => setComposer(true)}><strong><Icon name="comment"/></strong><small>{117 + i * 83}</small></button><button className="share" aria-label="Share post" onClick={() => { navigator.clipboard?.writeText(location.href); note("Link copied — ready to share"); }}><strong><Icon name="share"/></strong><small>Share</small></button><button className="more-action" aria-label="More options" onClick={() => note("More options opened")}><strong><Icon name="more"/></strong></button></div><div className="progress"><span></span></div>
           </article>{activeFeed !== "following" && (i === 1 || i === 4) && <article className="ad"><div><small>SPONSORED · HARDWOOD HUSTLE</small><h1>Made for the last run.</h1><p>For the ones who stay late.</p></div><b>●</b><button onClick={() => note("Shop link opened")}>Shop ↗</button></article>}</div>; })}</section>
+        {activeFeed !== "following" && livePosts.length > 0 && <section className="live-feed demo-feed"><h2>Fresh from demo hoopers</h2>{livePosts.map(post => <article className="live-post" key={post.id}><video src={post.video_path} controls playsInline preload="metadata" poster={post.poster_path || undefined}/><div><b>{post.author?.display_name || post.author?.username || "Wildball hooper"}</b><small>@{post.author?.username || "wildball"}</small><p>{post.caption}</p></div></article>)}</section>}
       </main>
-      <aside className="right"><div className="online"><span></span>12,843 hoopers online</div><section><h2>Trending now <button onClick={() => note("All trends opened")}>See all</button></h2>{["# WNBAPlayoffs", "# InMyBag", "# DunkOfTheDay"].map((x, i) => <button className="trend" key={x} onClick={() => note(`${x} selected`)}><b>{x}</b><small>{["48.2K", "32.1K", "18.7K"][i]} posts ↗</small></button>)}</section><section><h2>Players to follow <button onClick={() => note("Suggestions opened")}>See all</button></h2>{[[5,"tori.takes","Film room & fundamentals"],[33,"notyouraveragejo","Chicago hoops"],[25,"thepaintisopen","Daily basketball"]].map(([id, name, subtitle]) => <div className="person" key={String(name)}><img src={`https://i.pravatar.cc/100?img=${id}`} alt={String(name)}/><span><b>{name}</b><small>{subtitle}</small></span><button className={`follow ${following.includes(String(name)) ? "on" : ""}`} onClick={() => toggleFollow(String(name))}>{following.includes(String(name)) ? "Following" : "Follow"}</button></div>)}</section><footer>About · Newsroom · Careers · Help<br/>Community Guidelines · Privacy<br/><br/>© 2026 WILDBALL MEDIA</footer></aside>
+      <aside className="right"><div className="online"><span></span>12,843 hoopers online</div><section><h2>Trending now <button onClick={() => note("All trends opened")}>See all</button></h2>{["# WNBAPlayoffs", "# InMyBag", "# DunkOfTheDay"].map((x, i) => <button className="trend" key={x} onClick={() => note(`${x} selected`)}><b>{x}</b><small>{["48.2K", "32.1K", "18.7K"][i]} posts ↗</small></button>)}</section><section><h2>Players to follow <button onClick={() => note("Suggestions opened")}>See all</button></h2>{demoProfiles.length ? demoProfiles.map((demo, i) => <div className="person" key={demo.id} role="link" tabIndex={0} onClick={() => window.location.assign(`/u/${demo.username}`)} onKeyDown={event => { if (event.key === "Enter") window.location.assign(`/u/${demo.username}`); }}><img src={`https://i.pravatar.cc/100?img=${(i + 11) % 70}`} alt={demo.username}/><span><b>{demo.username}</b><small>{demo.location || "Wildball demo hooper"}</small></span><button className={`follow ${following.includes(demo.username) ? "on" : ""}`} onClick={event => { event.stopPropagation(); void toggleDemoFollow(demo); }}>{following.includes(demo.username) ? "Following" : "Follow"}</button></div>) : <p className="empty-real">Loading demo hoopers…</p>}</section><footer>About · Newsroom · Careers · Help<br/>Community Guidelines · Privacy<br/><br/>© 2026 WILDBALL MEDIA</footer></aside>
     </div>
-    {livePosts.length > 0 && <section className="live-feed"><h2>Fresh from the community</h2>{livePosts.map(post => <article className="live-post" key={post.id}><video src={post.video_path} controls playsInline preload="metadata" poster={post.poster_path || undefined}/><div><b>{post.author?.display_name || post.author?.username || "Wildball hooper"}</b><small>@{post.author?.username || "wildball"}</small><p>{post.caption}</p></div></article>)}</section>}
     <nav className="bottom"><button aria-label="Home" onClick={() => selectFeed("for-you")}><Icon name="home"/><small>Home</small></button><button aria-label="Explore" onClick={() => selectFeed("explore")}><Icon name="search"/><small>Explore</small></button><button className="add" aria-label="Create post" onClick={() => setComposer(true)}><Icon name="plus"/></button><button aria-label="Inbox" onClick={() => note("Inbox opened")}><Icon name="inbox"/><small>Inbox</small></button><button aria-label="Profile" onClick={() => window.location.assign("/profile")}><Icon name="profile"/><small>Profile</small></button></nav>
     {composer && <div className="modal-backdrop"><div className="composer"><button className="close" onClick={() => setComposer(false)} aria-label="Close">×</button><p>CREATE A WILDBALL</p><h1>What&apos;s good on the court?</h1><label><Icon name="plus"/><span><b>{selectedVideo ? selectedVideo.name : "Choose a clip"}</b><small>MP4, MOV or WEBM · up to 500 MB</small></span><input type="file" accept="video/mp4,video/webm,video/quicktime" hidden onChange={event => setSelectedVideo(event.target.files?.[0] || null)}/></label><textarea value={postCaption} onChange={event => setPostCaption(event.target.value)} maxLength={2200} placeholder="Tell the story..."></textarea><div><button type="button" onClick={() => note("Sound tools are coming soon")}>Add sound</button><button type="button" onClick={() => note("Tagging is coming soon")}>@ Tag people</button></div><button className="publish" disabled={uploading} onClick={publishPost}>{uploading ? "Uploading…" : "Post to Wildball →"}</button></div></div>}
     {profile && <div id="profile-view" className="open" onClick={e => e.currentTarget === e.target && setProfile(false)}><div className="profile-sheet"><button className="profile-close" onClick={() => setProfile(false)} aria-label="Close profile">×</button><div className="profile-head"><div className="profile-avatar">{(profileData?.display_name || profileData?.username || "M")[0].toUpperCase()}</div><div><h1>{profileData?.display_name || profileData?.username || "mika.runs"} {user && <span>✓</span>}</h1><p>{profileData ? `@${profileData.username} · ${profileData.location || "Add your location"}` : "Sign in to view your profile"}</p><button className="edit-profile" onClick={() => { if (!user) return openAuth(); setProfileDraft({ display_name: profileData?.display_name || "", bio: profileData?.bio || "", location: profileData?.location || "" }); setEditingProfile(true); }}>{user ? "Edit profile" : "Log in / Sign up"}</button></div></div>{editingProfile ? <div className="profile-editor"><label>Name<input value={profileDraft.display_name} onChange={e => setProfileDraft(d => ({ ...d, display_name: e.target.value }))}/></label><label>Location<input value={profileDraft.location} onChange={e => setProfileDraft(d => ({ ...d, location: e.target.value }))}/></label><label>Bio<textarea value={profileDraft.bio} onChange={e => setProfileDraft(d => ({ ...d, bio: e.target.value }))}/></label><button onClick={saveProfile}>Save profile</button><button className="cancel" onClick={() => setEditingProfile(false)}>Cancel</button></div> : <><p className="bio">{profileData?.bio || "Basketball, stories & the culture around the court."}<br/><b>#WildballCreator</b></p><div className="profile-stats">{[["128","Following"],["14.8K","Followers"],["392K","Likes"]].map(([a,b]) => <button key={b}><strong>{a}</strong><small>{b}</small></button>)}</div><div className="profile-tabs"><button className="active">Posts</button><button>Liked</button></div><div className="profile-grid">{Array.from({length:9}, (_,i) => <button key={i} onClick={() => note("Opening your post")}><img src={`/assets/wildball-${covers[i % 4]}.png`} alt="Uploaded basketball clip"/><span>▶ <b>{12 + i * 3}.{i}K</b></span></button>)}</div></>}</div></div>}

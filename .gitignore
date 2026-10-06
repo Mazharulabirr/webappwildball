@@ -6,6 +6,7 @@ node_modules/
 next-dev.log
 next-dev-error.log
 demo-accounts.local.csv
+tsconfig.tsbuildinfo
 
 .vercel
 .env*
