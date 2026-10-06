@@ -6,6 +6,7 @@ import type { User } from "@supabase/supabase-js";
 
 type IconName = "ball" | "home" | "people" | "search" | "live" | "plus" | "heart" | "comment" | "share" | "more" | "volume" | "profile" | "inbox";
 type Profile = { id: string; username: string; display_name: string | null; bio: string | null; location: string | null; avatar_path: string | null };
+type LivePost = { id: string; author_id: string; caption: string; video_path: string; poster_path: string | null; created_at: string; author?: { username: string; display_name: string | null } };
 const paths: Record<IconName, string> = {
   ball: '<circle cx="12" cy="12" r="8.5"/><path d="M3.8 12h16.4M12 3.5c2.6 2.3 3.8 5.2 3.8 8.5S14.6 18.2 12 20.5M12 3.5C9.4 5.8 8.2 8.7 8.2 12s1.2 6.2 3.8 8.5"/>',
   home: '<path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1Z"/>',
@@ -41,10 +42,37 @@ export default function Home() {
   const [profileData, setProfileData] = useState<Profile | null>(null);
   const [editingProfile, setEditingProfile] = useState(false);
   const [profileDraft, setProfileDraft] = useState({ display_name: "", bio: "", location: "" });
+  const [selectedVideo, setSelectedVideo] = useState<File | null>(null), [postCaption, setPostCaption] = useState(""), [uploading, setUploading] = useState(false), [livePosts, setLivePosts] = useState<LivePost[]>([]);
   const note = (text: string) => { setToast(text); window.setTimeout(() => setToast(""), 2200); };
   const toggleFollow = (name: string) => setFollowing(old => old.includes(name) ? old.filter(x => x !== name) : [...old, name]);
   const toggleLike = (i: number) => setLiked(old => old.includes(i) ? old.filter(x => x !== i) : [...old, i]);
   const openAuth = () => { window.location.assign("/login"); };
+  const loadLivePosts = async () => {
+    const { data: postData } = await supabase.from("posts").select("id, author_id, caption, video_path, poster_path, created_at").eq("status", "published").order("created_at", { ascending: false }).limit(30);
+    const posts = (postData || []) as LivePost[];
+    const authorIds = [...new Set(posts.map(post => post.author_id))];
+    if (!authorIds.length) { setLivePosts([]); return; }
+    const { data: authors } = await supabase.from("profiles").select("id, username, display_name").in("id", authorIds);
+    const authorMap = new Map((authors || []).map(author => [author.id, author]));
+    setLivePosts(posts.map(post => ({ ...post, author: authorMap.get(post.author_id) })));
+  };
+  const publishPost = async () => {
+    if (!user) { note("Log in to post a video"); openAuth(); return; }
+    if (!selectedVideo) { note("Choose a video first"); return; }
+    if (!selectedVideo.type.startsWith("video/")) { note("Please choose an MP4, MOV, or WEBM video"); return; }
+    if (selectedVideo.size > 524288000) { note("Video must be 500 MB or smaller"); return; }
+    setUploading(true);
+    const safeName = selectedVideo.name.replace(/[^a-zA-Z0-9._-]/g, "-");
+    const storagePath = `${user.id}/${Date.now()}-${safeName}`;
+    const { error: uploadError } = await supabase.storage.from("videos").upload(storagePath, selectedVideo, { contentType: selectedVideo.type, upsert: false });
+    if (uploadError) { setUploading(false); note(uploadError.message); return; }
+    const { data: publicUrl } = supabase.storage.from("videos").getPublicUrl(storagePath);
+    const { data: post, error: postError } = await supabase.from("posts").insert({ author_id: user.id, caption: postCaption.trim(), video_path: publicUrl.publicUrl, status: "published" }).select("id, author_id, caption, video_path, poster_path, created_at").single();
+    setUploading(false);
+    if (postError) { note(postError.message); return; }
+    setLivePosts(current => [{ ...post, author: { username: profileData?.username || "you", display_name: profileData?.display_name || "You" } }, ...current]);
+    setSelectedVideo(null); setPostCaption(""); setComposer(false); note("Video posted to Wildball!");
+  };
   useEffect(() => {
     const loadProfile = async (currentUser: User | null) => {
       if (!currentUser) { setProfileData(null); return; }
@@ -59,6 +87,7 @@ export default function Home() {
     const { data: subscription } = supabase.auth.onAuthStateChange((_event, session) => { setUser(session?.user ?? null); void loadProfile(session?.user ?? null); });
     return () => subscription.subscription.unsubscribe();
   }, [supabase]);
+  useEffect(() => { void loadLivePosts(); }, [supabase]);
   const submitAuth = async (email: string, password: string, username: string): Promise<string> => {
     if (auth === "signup") {
       const normalizedUsername = username.trim().toLowerCase();
@@ -115,8 +144,9 @@ export default function Home() {
       </main>
       <aside className="right"><div className="online"><span></span>12,843 hoopers online</div><section><h2>Trending now <button onClick={() => note("All trends opened")}>See all</button></h2>{["# WNBAPlayoffs", "# InMyBag", "# DunkOfTheDay"].map((x, i) => <button className="trend" key={x} onClick={() => note(`${x} selected`)}><b>{x}</b><small>{["48.2K", "32.1K", "18.7K"][i]} posts ↗</small></button>)}</section><section><h2>Players to follow <button onClick={() => note("Suggestions opened")}>See all</button></h2>{[[5,"tori.takes","Film room & fundamentals"],[33,"notyouraveragejo","Chicago hoops"],[25,"thepaintisopen","Daily basketball"]].map(([id, name, subtitle]) => <div className="person" key={String(name)}><img src={`https://i.pravatar.cc/100?img=${id}`} alt={String(name)}/><span><b>{name}</b><small>{subtitle}</small></span><button className={`follow ${following.includes(String(name)) ? "on" : ""}`} onClick={() => toggleFollow(String(name))}>{following.includes(String(name)) ? "Following" : "Follow"}</button></div>)}</section><footer>About · Newsroom · Careers · Help<br/>Community Guidelines · Privacy<br/><br/>© 2026 WILDBALL MEDIA</footer></aside>
     </div>
+    {livePosts.length > 0 && <section className="live-feed"><h2>Fresh from the community</h2>{livePosts.map(post => <article className="live-post" key={post.id}><video src={post.video_path} controls playsInline preload="metadata" poster={post.poster_path || undefined}/><div><b>{post.author?.display_name || post.author?.username || "Wildball hooper"}</b><small>@{post.author?.username || "wildball"}</small><p>{post.caption}</p></div></article>)}</section>}
     <nav className="bottom"><button aria-label="Home" onClick={() => selectFeed("for-you")}><Icon name="home"/><small>Home</small></button><button aria-label="Explore" onClick={() => selectFeed("explore")}><Icon name="search"/><small>Explore</small></button><button className="add" aria-label="Create post" onClick={() => setComposer(true)}><Icon name="plus"/></button><button aria-label="Inbox" onClick={() => note("Inbox opened")}><Icon name="inbox"/><small>Inbox</small></button><button aria-label="Profile" onClick={() => window.location.assign("/profile")}><Icon name="profile"/><small>Profile</small></button></nav>
-    {composer && <div className="modal-backdrop"><div className="composer"><button className="close" onClick={() => setComposer(false)} aria-label="Close">×</button><p>CREATE A WILDBALL</p><h1>What&apos;s good on the court?</h1><label><Icon name="plus"/><span><b>Choose a clip</b><small>MP4, MOV or WEBM · up to 500 MB</small></span><input type="file" hidden/></label><textarea placeholder="Tell the story..."></textarea><div><button>Add sound</button><button>@ Tag people</button></div><button className="publish" onClick={() => { setComposer(false); note("Posted to Wildball!"); }}>Post to Wildball →</button></div></div>}
+    {composer && <div className="modal-backdrop"><div className="composer"><button className="close" onClick={() => setComposer(false)} aria-label="Close">×</button><p>CREATE A WILDBALL</p><h1>What&apos;s good on the court?</h1><label><Icon name="plus"/><span><b>{selectedVideo ? selectedVideo.name : "Choose a clip"}</b><small>MP4, MOV or WEBM · up to 500 MB</small></span><input type="file" accept="video/mp4,video/webm,video/quicktime" hidden onChange={event => setSelectedVideo(event.target.files?.[0] || null)}/></label><textarea value={postCaption} onChange={event => setPostCaption(event.target.value)} maxLength={2200} placeholder="Tell the story..."></textarea><div><button type="button" onClick={() => note("Sound tools are coming soon")}>Add sound</button><button type="button" onClick={() => note("Tagging is coming soon")}>@ Tag people</button></div><button className="publish" disabled={uploading} onClick={publishPost}>{uploading ? "Uploading…" : "Post to Wildball →"}</button></div></div>}
     {profile && <div id="profile-view" className="open" onClick={e => e.currentTarget === e.target && setProfile(false)}><div className="profile-sheet"><button className="profile-close" onClick={() => setProfile(false)} aria-label="Close profile">×</button><div className="profile-head"><div className="profile-avatar">{(profileData?.display_name || profileData?.username || "M")[0].toUpperCase()}</div><div><h1>{profileData?.display_name || profileData?.username || "mika.runs"} {user && <span>✓</span>}</h1><p>{profileData ? `@${profileData.username} · ${profileData.location || "Add your location"}` : "Sign in to view your profile"}</p><button className="edit-profile" onClick={() => { if (!user) return openAuth(); setProfileDraft({ display_name: profileData?.display_name || "", bio: profileData?.bio || "", location: profileData?.location || "" }); setEditingProfile(true); }}>{user ? "Edit profile" : "Log in / Sign up"}</button></div></div>{editingProfile ? <div className="profile-editor"><label>Name<input value={profileDraft.display_name} onChange={e => setProfileDraft(d => ({ ...d, display_name: e.target.value }))}/></label><label>Location<input value={profileDraft.location} onChange={e => setProfileDraft(d => ({ ...d, location: e.target.value }))}/></label><label>Bio<textarea value={profileDraft.bio} onChange={e => setProfileDraft(d => ({ ...d, bio: e.target.value }))}/></label><button onClick={saveProfile}>Save profile</button><button className="cancel" onClick={() => setEditingProfile(false)}>Cancel</button></div> : <><p className="bio">{profileData?.bio || "Basketball, stories & the culture around the court."}<br/><b>#WildballCreator</b></p><div className="profile-stats">{[["128","Following"],["14.8K","Followers"],["392K","Likes"]].map(([a,b]) => <button key={b}><strong>{a}</strong><small>{b}</small></button>)}</div><div className="profile-tabs"><button className="active">Posts</button><button>Liked</button></div><div className="profile-grid">{Array.from({length:9}, (_,i) => <button key={i} onClick={() => note("Opening your post")}><img src={`/assets/wildball-${covers[i % 4]}.png`} alt="Uploaded basketball clip"/><span>▶ <b>{12 + i * 3}.{i}K</b></span></button>)}</div></>}</div></div>}
     {auth && <div id="auth-view" className={`open ${auth === "signup" ? "signup" : ""}`}><div className="auth-card"><button className="auth-close" onClick={() => setAuth(null)} aria-label="Close">×</button><div className="auth-brand"><Icon name="ball" className="icon-brand"/> WILDBALL <small>MEDIA</small></div><div className="auth-copy"><p>WELCOME TO THE COURT</p><h1>Basketball<br/>lives here.</h1><span>Watch, post and share the game with your people.</span></div><AuthForm signup={auth === "signup"} switchMode={() => setAuth(auth === "signup" ? "login" : "signup")} submit={async (email, password, username) => { const message = await submitAuth(email, password, username); note(message); if (message.startsWith("Account created") || message.startsWith("Welcome back")) setAuth(null); return message; }}/></div></div>}
     <div id="toast" className={toast ? "show" : ""}>{toast}</div>
