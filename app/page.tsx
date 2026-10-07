@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createClient as createSupabaseClient } from "../lib/supabase/client";
 import type { User } from "@supabase/supabase-js";
 
@@ -44,6 +44,7 @@ export default function Home() {
   const [liked, setLiked] = useState<number[]>([]), [following, setFollowing] = useState<string[]>([]), [toast, setToast] = useState("");
   const [actionMenu, setActionMenu] = useState<"comment" | "more" | null>(null), [commentDraft, setCommentDraft] = useState("");
   const [activeFeed, setActiveFeed] = useState<"for-you" | "following" | "explore">("for-you");
+  const feedVideoRefs = useRef(new Map<number, HTMLVideoElement>());
   const [supabase] = useState(() => createSupabaseClient());
   const [user, setUser] = useState<User | null>(null);
   const [profileData, setProfileData] = useState<Profile | null>(null);
@@ -119,6 +120,23 @@ export default function Home() {
     };
     void loadFollowedDemoProfiles();
   }, [demoProfiles, supabase, user]);
+  useEffect(() => {
+    const videos = [...feedVideoRefs.current.values()];
+    if (!videos.length) return;
+    if (!("IntersectionObserver" in window)) {
+      void videos[0]?.play().catch(() => undefined);
+      return;
+    }
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        const video = entry.target as HTMLVideoElement;
+        if (entry.isIntersecting) void video.play().catch(() => undefined);
+        else video.pause();
+      });
+    }, { threshold: 0.6 });
+    videos.forEach(video => observer.observe(video));
+    return () => observer.disconnect();
+  }, [activeFeed]);
   const submitAuth = async (email: string, password: string, username: string): Promise<string> => {
     if (auth === "signup") {
       const normalizedUsername = username.trim().toLowerCase();
@@ -169,7 +187,7 @@ export default function Home() {
         <header><a className="mobile-logo" aria-label="Wildball home">W<span>•</span>B</a><div className="tabs"><button className={activeFeed === "for-you" ? "selected" : ""} onClick={() => selectFeed("for-you")}>FOR YOU</button><button className={activeFeed === "following" ? "selected" : ""} onClick={() => selectFeed("following")}>FOLLOWING</button></div><button className="search" aria-label="Search users" onClick={() => window.location.assign("/search")}><Icon name="search"/></button><button className="mobile-auth" onClick={openAuth}>Log in</button></header>
         <section className="stories"><button className="story" onClick={() => setComposer(true)}><span>+</span>Your story</button>{[1,2,3,4,5].map(n => { const username = `courtvision${String(n).padStart(2, "0")}`; return <button className="story" key={username} onClick={() => window.location.assign(`/u/${username}`)}><img src={`/assets/avatars/${username}.png`} alt={`${username}'s profile`}/>{username}</button>; })}</section>
         <section id="feed" onClick={(event) => { const target = event.target as HTMLElement; if (target.closest(".follow")) return; if (!target.closest(".creator, .creator-action")) return; const username = target.closest(".post")?.querySelector(".creator b")?.textContent; if (username) window.location.assign(`/u/${username}`); }}>{activeFeed === "following" && posts.length === 0 && <div className="empty-feed"><Icon name="people"/><h1>Build your court.</h1><p>Follow hoopers from the right rail to see their clips here.</p><button onClick={() => selectFeed("explore")}>Explore players</button></div>}{activeFeed === "explore" && <div className="feed-heading"><small>DISCOVER THE COURT</small><h1>Explore</h1><p>Fresh clips and conversations from the Wildball community.</p></div>}{posts.map(({ post: p, index: i }) => { const isLiked = liked.includes(i), isFollowing = following.includes(p[0]); return <div key={i}>
-          <article className={`post post-${i % 5} photo`}><div className="art"><i></i><b>●</b></div><video className="hero" autoPlay loop muted playsInline preload="metadata" poster={`/assets/wildball-${covers[i % 4]}.png`} aria-label="Basketball action video"><source src={`/videos/${clips[i % clips.length]}.mp4`} type="video/mp4"/></video><div className="veil"></div><small className="tag"><span></span>{p[6]}</small><button className="sound" aria-label="Toggle sound" onClick={() => note("Clips play muted for now")}><Icon name="volume"/></button>
+          <article className={`post post-${i % 5} photo`}><div className="art"><i></i><b>●</b></div><video ref={element => { if (element) feedVideoRefs.current.set(i, element); else feedVideoRefs.current.delete(i); }} className="hero" loop muted playsInline preload="none" poster={`/assets/wildball-${covers[i % 4]}.png`} aria-label="Basketball action video"><source src={`/videos/${clips[i % clips.length]}.mp4`} type="video/mp4"/></video><div className="veil"></div><small className="tag"><span></span>{p[6]}</small><button className="sound" aria-label="Toggle sound" onClick={() => note("Clips play muted for now")}><Icon name="volume"/></button>
             <div className="copy"><div className="creator"><img src={`/assets/avatars/${p[0]}.png`} alt={p[0]}/><span><b>{p[0]}</b><small>{p[1]}</small></span><button className={`follow ${isFollowing ? "on" : ""}`} onClick={() => toggleFollow(p[0])}>{isFollowing ? "Following" : "Follow"}</button></div><h1>{p[3]} <em><Icon name="ball"/></em></h1><p>{p[4]} <b>{p[5]}</b></p><button className="audio" onClick={() => note("Original sound selected")}><Icon name="volume"/>original sound · {p[0]}</button></div>
             <div className="actions"><button className="creator-action" aria-label={`Follow ${p[0]}`} onClick={() => toggleFollow(p[0])}><img src={`/assets/avatars/${p[0]}.png`} alt=""/><i><Icon name="plus"/></i></button><button className={`like ${isLiked ? "liked" : ""}`} aria-label="Like post" onClick={() => toggleLike(i)}><strong><Icon name="heart"/></strong><small>{8 + i * 3}.{i % 9}K</small></button><button className="comment" aria-label="Comment" onClick={() => setComposer(true)}><strong><Icon name="comment"/></strong><small>{117 + i * 83}</small></button><button className="share" aria-label="Share post" onClick={() => { navigator.clipboard?.writeText(location.href); note("Link copied — ready to share"); }}><strong><Icon name="share"/></strong><small>Share</small></button><button className="more-action" aria-label="More options" onClick={() => note("More options opened")}><strong><Icon name="more"/></strong></button></div><div className="progress"><span></span></div>
           </article>{activeFeed !== "following" && (i === 1 || i === 4) && <article className="ad"><div><small>SPONSORED · HARDWOOD HUSTLE</small><h1>Made for the last run.</h1><p>For the ones who stay late.</p></div><b>●</b><button onClick={() => note("Shop link opened")}>Shop ↗</button></article>}</div>; })}</section>

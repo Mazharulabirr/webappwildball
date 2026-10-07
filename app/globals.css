@@ -1,4 +1,5 @@
 @import url("../style.css");
+@import "./mobile-performance.css";
 @import url("./inbox.css");
 @import url("./settings.css");
 @import url("./settings-functional.css");

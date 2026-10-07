@@ -1,0 +1,34 @@
+/* Keep the mobile feed responsive on high-refresh displays. */
+@media (max-width: 720px) {
+  html { scroll-behavior: auto; }
+
+  #feed { scroll-snap-type: none; }
+
+  .post,
+  .ad { scroll-snap-align: none; }
+
+  .post {
+    contain: layout paint;
+    transform: translateZ(0);
+  }
+
+  .hero {
+    mix-blend-mode: normal;
+    will-change: transform;
+    transform: translateZ(0);
+  }
+
+  header,
+  .bottom,
+  .actions strong {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+
+  .bottom { background: #17191af2; }
+  .actions strong { background: rgba(11, 14, 17, .64); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+}
