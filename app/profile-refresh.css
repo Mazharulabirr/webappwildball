@@ -1,0 +1,39 @@
+.wb-profile .wb-profile-toolbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:26px}
+.wb-profile .back-home{width:auto;margin:0;padding:0;text-align:left;text-decoration:none;font-size:13px;font-weight:700}
+.wb-profile .profile-menu-trigger{position:static;flex:0 0 40px}
+.wb-profile .profile-menu{top:96px}
+.wb-profile .real-profile-card{display:flex;align-items:center;gap:22px;margin:0;padding:28px;border:1px solid #dfd9cf;border-radius:18px;background:#fffdf9;box-shadow:0 10px 30px #29251c06}
+.wb-profile .real-profile-card>div:nth-child(2){flex:1;min-width:0}
+.wb-profile .real-profile-card .eyebrow{margin:0 0 8px;color:#d74f2c;font-size:9px;letter-spacing:1.5px}
+.wb-profile .real-profile-card h1{font-size:30px;overflow-wrap:anywhere}
+.wb-profile .real-profile-card>button{width:auto;background:#262f2d;white-space:nowrap}
+.wb-profile .real-avatar{flex:0 0 82px;width:82px;height:82px;background:#ef6039;font-size:30px}
+.wb-profile .real-bio{margin:22px 4px;line-height:1.6;color:#67685f;font-size:14px}
+.wb-profile .real-stats{gap:0;padding:18px 0;border-color:#e1dcd2}
+.wb-profile .real-stats>div{flex:1;text-align:center}
+.wb-profile .real-stats b{font-size:23px}
+.wb-profile .real-stats span{font-size:11px}
+.wb-profile .real-posts{margin:32px 0 0}
+.wb-video-heading{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
+.wb-profile .wb-video-heading h2{margin:0;padding:0;font-size:20px;text-transform:none;letter-spacing:-.5px}
+.wb-video-heading>span{font-size:11px;color:#817e76}
+.wb-video-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;align-items:start}
+.wb-video-list article{overflow:hidden;border:1px solid #ded8cd;border-radius:14px;background:#fffdf9;box-shadow:0 6px 20px #26221806}
+.wb-video-list article:only-child{grid-column:1/-1;max-width:640px;width:100%;justify-self:center}
+.wb-video-list video{display:block;width:100%;height:auto;max-height:65vh;object-fit:contain;background:#17201e;pointer-events:auto}
+.wb-video-list article>div{padding:14px 16px}
+.wb-video-list p{margin:0 0 7px;color:#272e2b;font-size:13px;line-height:1.5;overflow-wrap:anywhere}
+.wb-video-list time{color:#918a7d;font-size:10px}
+@media(max-width:600px){
+.wb-profile{padding:18px 16px 40px}
+.wb-profile .wb-profile-toolbar{margin-bottom:20px}
+.wb-profile .profile-menu{top:65px}
+.wb-profile .real-profile-card{display:flex;flex-wrap:wrap;gap:16px;padding:22px 18px;margin:0!important}
+.wb-profile .real-avatar{flex-basis:64px;width:64px;height:64px;font-size:25px}
+.wb-profile .real-profile-card h1{font-size:25px;line-height:1.15}
+.wb-profile .real-profile-card>button{width:100%;margin:0;padding:11px}
+.wb-profile .real-stats b{font-size:21px}
+.wb-video-list{grid-template-columns:1fr;gap:18px}
+.wb-video-list video{max-height:58dvh}
+.wb-profile .empty-real{margin:0}
+}

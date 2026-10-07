@@ -5,6 +5,11 @@
 @import url("./inbox-modern.css");
 @import url("./inbox-avatars.css");
 @import url("./inbox-mobile.css");
+@import url("./inbox-messenger.css");
+@import url("./mobile-access.css");
+@import url("./profile-menu.css");
+@import url("./profile-polish.css");
+@import url("./profile-refresh.css");
 @import url("./search.css");
 
 .public-actions .profile-support{border-color:#8a6b19;background:linear-gradient(135deg,#c99c2e,#806017);color:#fff}.support-panel>div{max-width:420px}.support-panel h2{margin-bottom:7px}.support-panel p{margin:0 0 17px;color:#aaa;font-size:13px;line-height:1.45}.tip-options{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}.tip-options button{border:1px solid #4a4a4a;border-radius:8px;padding:12px 5px;background:#111;color:#fff;font-weight:800}.tip-options button.selected{border-color:#e6b844;background:#5c4613;color:#ffe7a2}.support-summary{display:flex;justify-content:space-between;align-items:center;margin-top:15px;padding:13px 0;border-block:1px solid #3b3b3b;color:#aaa;font-size:12px}.support-summary strong{color:#fff;font-size:19px}.support-note{display:block;margin-top:10px;color:#888;font-size:10px;text-align:center}
