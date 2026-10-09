@@ -1,0 +1,4 @@
+/* Feed follow badge mirrors the saved follows state. */
+.post:has(.creator .follow.on) .creator-action i .icon{display:none}
+.post:has(.creator .follow.on) .creator-action i::after{content:"✓";font-family:Arial,sans-serif;font-size:13px;font-weight:900;line-height:1;color:#fff}
+.post:has(.creator .follow.on) .creator-action i{background:#202a25}

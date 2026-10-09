@@ -10,6 +10,8 @@ import "./mobile-smooth.css";
 import "./profile-discovery.css";
 import "./credits.css";
 import "./wallet.css";
+import "./follow-status.css";
+import "./profile-mobile-grid.css";
 import ThemeBoot from "./theme-boot";
 
 export const metadata: Metadata = {
