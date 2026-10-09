@@ -1,0 +1,20 @@
+html.dark-mode{--ink:#f4f4f2;--paper:#111312;--line:#303331;--muted:#a1a6a2;background:#111312;color-scheme:dark}
+html.dark-mode body{background:#111312;color:#f4f4f2}
+html.dark-mode header{background:#111312ed}
+html.dark-mode .shell nav button,html.dark-mode .leagues button,html.dark-mode .story,html.dark-mode .trend,html.dark-mode .account{color:#c9cdca}
+html.dark-mode .shell nav button.selected{background:#292c2a;color:#fff}
+html.dark-mode .tabs button.selected{color:#fff}
+html.dark-mode .search{background:#292c2a;color:#fff}
+html.dark-mode .account>span{background:#6d4b3e;color:#fff}
+html.dark-mode .create{background:#f0f1ef;color:#151615}
+html.dark-mode .person .follow{color:#f4f4f2;border-color:#666}
+html.dark-mode .person .follow.on{background:#f4f4f2;color:#111}
+html.dark-mode .online{color:#aaa}
+html.dark-mode .language-dialog{background:#191b1a;color:#f4f4f2;border:1px solid #343735}
+html.dark-mode .language-dialog-head button{background:#303330;color:#fff}
+html.dark-mode .language-dialog-copy{color:#a8aca9}
+html.dark-mode .language-dialog select{background:#242725;color:#fff;border-color:#484c49}
+html.dark-mode .language-cancel{color:#f4f4f2;border-color:#484c49}
+html.dark-mode .post-action-panel,html.dark-mode dialog{background:#191b1a;color:#f4f4f2}
+html.dark-mode textarea,html.dark-mode input{background:#242725;color:#fff;border-color:#484c49}
+html.dark-mode dialog label b{color:#fff}

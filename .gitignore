@@ -2,6 +2,7 @@
 chrome-preview-profile/
 client-preview/
 node_modules/
+.npm-cache/
 .next/
 next-dev.log
 next-dev-error.log

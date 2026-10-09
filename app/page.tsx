@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { createClient as createSupabaseClient } from "../lib/supabase/client";
 import type { User } from "@supabase/supabase-js";
+import LanguageDialog from "./language-dialog";
+import { languageCodes } from "./language-codes";
 
 type IconName = "ball" | "home" | "people" | "search" | "live" | "plus" | "heart" | "comment" | "share" | "more" | "volume" | "profile" | "inbox" | "settings" | "language" | "moon" | "sliders" | "studio" | "effects" | "coins" | "shop" | "help" | "logout";
 type Profile = { id: string; username: string; display_name: string | null; bio: string | null; location: string | null; avatar_path: string | null };
@@ -37,10 +39,11 @@ const base = [
 ];
 const covers = ["hero", "dunk", "sunset", "arena"];
 const clips = ["street-dribble", "outdoor-practice", "court-action", "indoor-dribble", "indoor-training"];
+const languages = ["English (US)", "বাংলা", "English (UK)", "हिन्दी", "اردو", "Español", "Français", "Português (Brasil)", "Afrikaans", "አማርኛ", "العربية", "Azərbaycan dili", "Башҡортса", "Беларуская", "Bosanski", "Български", "Català", "中文（简体）", "中文（繁體）", "Hrvatski", "Čeština", "Dansk", "Nederlands", "Eesti", "Filipino", "Suomi", "Galego", "Deutsch", "Ελληνικά", "ગુજરાતી", "עברית", "Magyar", "Bahasa Indonesia", "Italiano", "日本語", "ಕನ್ನಡ", "Қазақша", "한국어", "Kiswahili", "Latviešu", "Lietuvių", "മലയാളം", "मराठी", "Bahasa Melayu", "नेपाली", "Norsk", "فارسی", "Polski", "Português (Portugal)", "ਪੰਜਾਬੀ", "Română", "Русский", "Српски", "Slovenčina", "Slovenščina", "Soomaali", "Svenska", "தமிழ்", "తెలుగు", "ไทย", "Türkçe", "Українська", "Tiếng Việt", "Yorùbá", "isiZulu"];
 
 export default function Home() {
   const [composer, setComposer] = useState(false), [profile, setProfile] = useState(false), [auth, setAuth] = useState<"login" | "signup" | null>(null);
-  const [moreMenu, setMoreMenu] = useState(false), [darkMode, setDarkMode] = useState(false);
+  const [moreMenu, setMoreMenu] = useState(false), [darkMode, setDarkMode] = useState(false), [themeReady, setThemeReady] = useState(false), [language, setLanguage] = useState("English (US)"), [languageDialog, setLanguageDialog] = useState(false);
   const [liked, setLiked] = useState<number[]>([]), [following, setFollowing] = useState<string[]>([]), [toast, setToast] = useState("");
   const [actionMenu, setActionMenu] = useState<"comment" | "more" | null>(null), [commentDraft, setCommentDraft] = useState("");
   const [activeFeed, setActiveFeed] = useState<"for-you" | "following" | "explore">("for-you");
@@ -112,6 +115,46 @@ export default function Home() {
   }, [supabase]);
   useEffect(() => { void loadLivePosts(); void loadDemoProfiles(); }, [supabase]);
   useEffect(() => {
+    const savedTheme = window.localStorage.getItem("wildball-theme");
+    setDarkMode(savedTheme ? savedTheme === "dark" : window.matchMedia("(prefers-color-scheme: dark)").matches);
+    setThemeReady(true);
+  }, []);
+  useEffect(() => {
+    if (!themeReady) return;
+    document.documentElement.classList.toggle("dark-mode", darkMode);
+    document.documentElement.style.colorScheme = darkMode ? "dark" : "light";
+    window.localStorage.setItem("wildball-theme", darkMode ? "dark" : "light");
+  }, [darkMode, themeReady]);
+  useEffect(() => {
+    const savedLanguage = window.localStorage.getItem("wildball-language");
+    if (savedLanguage && languages.includes(savedLanguage)) setLanguage(savedLanguage);
+  }, []);
+  useEffect(() => {
+    const initializeTranslator = () => {
+      const google = (window as Window & { google?: { translate?: { TranslateElement?: new (settings: object, id: string) => unknown } } }).google;
+      if (!google?.translate?.TranslateElement || document.querySelector(".goog-te-gadget")) return;
+      new google.translate.TranslateElement({ pageLanguage: "en", includedLanguages: [...new Set(Object.values(languageCodes))].join(","), autoDisplay: false }, "google_translate_element");
+    };
+    if ((window as Window & { google?: unknown }).google) initializeTranslator();
+    else {
+      (window as Window & { googleTranslateElementInit?: () => void }).googleTranslateElementInit = initializeTranslator;
+      if (!document.getElementById("google-translate-script")) {
+        const script = document.createElement("script");
+        script.id = "google-translate-script"; script.src = "https://translate.google.com/translate_a/element.js?cb=googleTranslateElementInit";
+        document.body.append(script);
+      }
+    }
+  }, []);
+  useEffect(() => {
+    const openLanguageDialog = (event: MouseEvent) => {
+      const button = (event.target as HTMLElement).closest<HTMLButtonElement>(".more-menu > button:nth-of-type(2)");
+      if (!button) return;
+      event.preventDefault(); event.stopImmediatePropagation(); setLanguageDialog(true);
+    };
+    document.addEventListener("click", openLanguageDialog, true);
+    return () => document.removeEventListener("click", openLanguageDialog, true);
+  }, []);
+  useEffect(() => {
     const loadFollowedDemoProfiles = async () => {
       if (!user || !demoProfiles.length) return;
       const demoById = new Map(demoProfiles.map(demo => [demo.id, demo.username]));
@@ -167,6 +210,12 @@ export default function Home() {
     setActiveFeed(feed);
     note(feed === "for-you" ? "Your curated feed is ready" : feed === "following" ? "Showing creators you follow" : "Explore the Wildball community");
   };
+  const saveLanguage = (selectedLanguage: string) => {
+    const code = languageCodes[selectedLanguage] || "en";
+    window.localStorage.setItem("wildball-language", selectedLanguage);
+    document.cookie = `googtrans=/en/${code};path=/;max-age=31536000;SameSite=Lax`;
+    window.location.reload();
+  };
   const posts = activeFeed === "following"
     ? Array.from({ length: 12 }, (_, i) => ({ post: base[i % base.length], index: i })).filter(({ post }) => following.includes(post[0]))
     : activeFeed === "explore"
@@ -176,6 +225,7 @@ export default function Home() {
   return <>{user && <style>{".mobile-auth{display:none!important}"}</style>}{actionMenu === "comment" && <div className="modal-backdrop" onClick={() => setActionMenu(null)}><div className="post-action-panel" onClick={event => event.stopPropagation()}><button className="close" onClick={() => setActionMenu(null)} aria-label="Close">×</button><p>ADD A COMMENT</p><h2>Join the conversation</h2><textarea autoFocus value={commentDraft} onChange={event => setCommentDraft(event.target.value)} maxLength={500} placeholder="Write something positive..."></textarea><button className="publish" onClick={() => { if (!commentDraft.trim()) return; setCommentDraft(""); setActionMenu(null); note("Comment posted."); }}>Post comment</button></div></div>}{actionMenu === "more" && <div className="modal-backdrop" onClick={() => setActionMenu(null)}><div className="post-action-panel post-more-panel" onClick={event => event.stopPropagation()}><button className="close" onClick={() => setActionMenu(null)} aria-label="Close">×</button><p>POST OPTIONS</p><h2>What would you like to do?</h2><button onClick={() => { setActionMenu(null); note("Post saved to your collection."); }}>Save post</button><button onClick={() => { setActionMenu(null); note("Not interested — we will show fewer posts like this."); }}>Not interested</button><button className="report-action" onClick={() => { setActionMenu(null); note("Report received. Thanks for helping keep Wildball safe."); }}>Report post</button></div></div>}
     <div className={`shell${darkMode ? " dark-mode" : ""}`} onClickCapture={(event) => { const action = (event.target as HTMLElement).closest(".actions button"); if (!action) return; if (action.classList.contains("creator-action")) { event.preventDefault(); event.stopPropagation(); const username = action.closest(".post")?.querySelector(".creator b")?.textContent; if (username) window.location.assign(`/u/${username}`); return; } if (action.classList.contains("comment")) { event.preventDefault(); event.stopPropagation(); setActionMenu("comment"); } if (action.classList.contains("more-action")) { event.preventDefault(); event.stopPropagation(); setActionMenu("more"); } }}>
       <aside>
+        {languageDialog && <LanguageDialog value={language} onSave={saveLanguage} onClose={() => setLanguageDialog(false)} />}
         <a className="logo" href="#feed"><Icon name="ball" className="icon-brand"/><span>WILDBALL<small>MEDIA</small></span></a>
         <nav><button className={activeFeed === "for-you" ? "selected" : ""} onClick={() => selectFeed("for-you")}><Icon name="home"/>For you</button><button className={activeFeed === "following" ? "selected" : ""} onClick={() => selectFeed("following")}><Icon name="people"/>Following</button><button className={activeFeed === "explore" ? "selected" : ""} onClick={() => selectFeed("explore")}><Icon name="search"/>Explore</button><button onClick={() => note("Live games are coming soon")}><Icon name="live"/>Live <i>3</i></button><button onClick={() => user ? window.location.assign("/inbox") : openAuth()}><Icon name="inbox"/>Inbox</button></nav>
         <div className="account-area"><button className="account" onClick={() => window.location.assign("/profile")}><span>{(profileData?.display_name || profileData?.username || user?.email || "M")[0].toUpperCase()}</span><strong>{profileData?.display_name || profileData?.username || "Your profile"}<small>{profileData ? `@${profileData.username}` : "Sign in to continue"}</small></strong></button>{user && <button className="sidebar-more" aria-label="Open more options" aria-expanded={moreMenu} onClick={() => setMoreMenu(open => !open)}><Icon name="more"/></button>}

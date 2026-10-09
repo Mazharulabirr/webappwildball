@@ -1,5 +1,11 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import "./language-menu.css";
+import "./language-dialog.css";
+import "./dark-theme.css";
+import "./settings-appearance.css";
+import "./mobile-settings-polish.css";
+import ThemeBoot from "./theme-boot";
 
 export const metadata: Metadata = {
   title: "Wildball Media",
@@ -7,5 +13,5 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return <html lang="en"><body>{children}</body></html>;
+  return <html lang="en" suppressHydrationWarning><body><ThemeBoot/><div id="google_translate_element" aria-hidden="true" />{children}</body></html>;
 }
