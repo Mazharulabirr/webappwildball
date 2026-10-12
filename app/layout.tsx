@@ -3,6 +3,7 @@ import "./globals.css";
 import "./language-menu.css";
 import "./language-dialog.css";
 import "./dark-theme.css";
+import "./light-theme.css";
 import "./settings-appearance.css";
 import "./mobile-settings-polish.css";
 import "./profile-safe-polish.css";
@@ -12,6 +13,8 @@ import "./credits.css";
 import "./wallet.css";
 import "./follow-status.css";
 import "./profile-mobile-grid.css";
+import "./passport.css";
+import "./gameday.css";
 import ThemeBoot from "./theme-boot";
 
 export const metadata: Metadata = {

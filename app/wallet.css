@@ -2,3 +2,6 @@
 .wb-wallet-profile{background:#ed5b31!important;color:#fff!important}
 @media(max-width:650px){.wallet-send-card{align-items:flex-start;flex-direction:column}.wallet-send-card>a{width:100%;text-align:center}.public-actions{grid-template-columns:1fr 1fr 42px!important}.public-actions .credit-gift-button{grid-column:1/3;grid-row:2;min-height:42px}.public-actions .round-action{grid-column:3;grid-row:2}.credit-dialog{max-height:calc(100dvh - 24px);overflow:auto}.credit-dialog-backdrop{padding:12px}}
 .dark-mode .wallet-card,.dark-mode .wallet-send-card{border-color:#353936;background:#191c1a}.dark-mode .wallet-send-card{background:linear-gradient(135deg,#271b17,#191c1a)}
+
+/* Keep the owner profile actions on one balanced mobile row. */
+@media(max-width:650px){.public-actions:has(.own-wallet-action){display:grid!important;grid-template-columns:minmax(0,1fr) minmax(0,1fr) 42px!important;gap:7px}.public-actions .credit-gift-button.own-wallet-action{grid-column:2!important;grid-row:1!important;min-height:42px}.public-actions:has(.own-wallet-action) .round-action{grid-column:3!important;grid-row:1!important}}
