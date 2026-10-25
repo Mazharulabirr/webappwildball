@@ -9,7 +9,7 @@ import CreditGiftDialog from "./credit-gift-dialog";
 
 type IconName = "ball" | "home" | "people" | "search" | "live" | "plus" | "check" | "heart" | "comment" | "share" | "more" | "volume" | "profile" | "inbox" | "settings" | "language" | "moon" | "sliders" | "studio" | "effects" | "coins" | "shop" | "help" | "logout";
 type Profile = { id: string; username: string; display_name: string | null; bio: string | null; location: string | null; avatar_path: string | null };
-type LivePost = { id: string; author_id: string; caption: string; video_path: string; poster_path: string | null; created_at: string; author?: { username: string; display_name: string | null } };
+type LivePost = { id: string; author_id: string; caption: string; video_path: string; poster_path: string | null; created_at: string; author?: { username: string; display_name: string | null; avatar_path: string | null } };
 type DemoProfile = Pick<Profile, "id" | "username" | "display_name" | "location">;
 const paths: Record<IconName, string> = {
   ball: '<circle cx="12" cy="12" r="8.5"/><path d="M3.8 12h16.4M12 3.5c2.6 2.3 3.8 5.2 3.8 8.5S14.6 18.2 12 20.5M12 3.5C9.4 5.8 8.2 8.7 8.2 12s1.2 6.2 3.8 8.5"/>',
@@ -55,6 +55,7 @@ export default function Home() {
   const [composer, setComposer] = useState(false), [profile, setProfile] = useState(false), [auth, setAuth] = useState<"login" | "signup" | null>(null);
   const [moreMenu, setMoreMenu] = useState(false), [darkMode, setDarkMode] = useState(false), [themeReady, setThemeReady] = useState(false), [language, setLanguage] = useState("English (US)"), [languageDialog, setLanguageDialog] = useState(false);
   const [liked, setLiked] = useState<number[]>([]), [following, setFollowing] = useState<string[]>([]), [toast, setToast] = useState("");
+  const [likedLivePosts, setLikedLivePosts] = useState<string[]>([]), [commentPostId, setCommentPostId] = useState<string | null>(null);
   const [actionMenu, setActionMenu] = useState<"comment" | "more" | null>(null), [commentDraft, setCommentDraft] = useState("");
   const [activeFeed, setActiveFeed] = useState<"for-you" | "following" | "explore">("for-you");
   const feedVideoRefs = useRef(new Map<number, HTMLVideoElement>());
@@ -84,6 +85,25 @@ export default function Home() {
     note(alreadyFollowing ? `Unfollowed @${demo.username}` : `Following @${demo.username}`);
   };
   const toggleLike = (i: number) => setLiked(old => old.includes(i) ? old.filter(x => x !== i) : [...old, i]);
+  const toggleLivePostLike = async (postId: string) => {
+    if (!user) { note("Log in to like a video"); openAuth(); return; }
+    const alreadyLiked = likedLivePosts.includes(postId);
+    const request = alreadyLiked
+      ? supabase.from("post_likes").delete().eq("post_id", postId).eq("user_id", user.id)
+      : supabase.from("post_likes").insert({ post_id: postId, user_id: user.id });
+    const { error } = await request;
+    if (error) { note(error.message); return; }
+    setLikedLivePosts(current => alreadyLiked ? current.filter(id => id !== postId) : [...current, postId]);
+  };
+  const submitComment = async () => {
+    const body = commentDraft.trim();
+    if (!body) return;
+    if (!user) { note("Log in to comment"); openAuth(); return; }
+    if (!commentPostId) { setCommentDraft(""); setActionMenu(null); note("Comment posted."); return; }
+    const { error } = await supabase.from("comments").insert({ post_id: commentPostId, author_id: user.id, body });
+    if (error) { note(error.message); return; }
+    setCommentDraft(""); setCommentPostId(null); setActionMenu(null); note("Comment posted.");
+  };
   const openAuth = () => { window.location.assign("/login"); };
   const openCreditGift = (username: string) => {
     if (!user) { openAuth(); return; }
@@ -92,13 +112,15 @@ export default function Home() {
     setGiftRecipient(recipient);
   };
   const loadLivePosts = async () => {
-    const { data: postData } = await supabase.from("posts").select("id, author_id, caption, video_path, poster_path, created_at").eq("status", "published").order("created_at", { ascending: false }).limit(30);
+    const { data: postData } = await supabase.from("posts").select("id, author_id, caption, video_path, poster_path, created_at").eq("status", "published").order("created_at", { ascending: false }).limit(120);
     const posts = (postData || []) as LivePost[];
     const authorIds = [...new Set(posts.map(post => post.author_id))];
     if (!authorIds.length) { setLivePosts([]); return; }
-    const { data: authors } = await supabase.from("profiles").select("id, username, display_name").in("id", authorIds);
+    const { data: authors } = await supabase.from("profiles").select("id, username, display_name, avatar_path").in("id", authorIds);
     const authorMap = new Map((authors || []).map(author => [author.id, author]));
-    setLivePosts(shuffle(posts.map(post => ({ ...post, author: authorMap.get(post.author_id) }))));
+    // The newest upload stays first; the rest of the feed changes on each visit.
+    const postsWithAuthors = posts.map(post => ({ ...post, author: authorMap.get(post.author_id) }));
+    setLivePosts(postsWithAuthors.length > 1 ? [postsWithAuthors[0], ...shuffle(postsWithAuthors.slice(1))] : postsWithAuthors);
   };
   const loadDemoProfiles = async () => {
     const { data } = await supabase.from("profiles").select("id, username, display_name, location").like("username", "courtvision%").order("username", { ascending: true }).limit(10);
@@ -118,7 +140,7 @@ export default function Home() {
     const { data: post, error: postError } = await supabase.from("posts").insert({ author_id: user.id, caption: postCaption.trim(), video_path: publicUrl.publicUrl, status: "published" }).select("id, author_id, caption, video_path, poster_path, created_at").single();
     setUploading(false);
     if (postError) { note(postError.message); return; }
-    setLivePosts(current => [{ ...post, author: { username: profileData?.username || "you", display_name: profileData?.display_name || "You" } }, ...current]);
+    setLivePosts(current => [{ ...post, author: { username: profileData?.username || "you", display_name: profileData?.display_name || "You", avatar_path: profileData?.avatar_path || null } }, ...current]);
     setSelectedVideo(null); setPostCaption(""); setComposer(false); note("Video posted to Wildball!");
   };
   useEffect(() => {
@@ -136,6 +158,10 @@ export default function Home() {
     return () => subscription.subscription.unsubscribe();
   }, [supabase]);
   useEffect(() => { setFeedOrder(shuffle(base.map((_, index) => index))); void loadLivePosts(); void loadDemoProfiles(); }, [supabase]);
+  useEffect(() => {
+    if (!user || !livePosts.length) { setLikedLivePosts([]); return; }
+    void supabase.from("post_likes").select("post_id").eq("user_id", user.id).in("post_id", livePosts.map(post => post.id)).then(({ data }) => setLikedLivePosts((data || []).map(like => like.post_id)));
+  }, [livePosts, supabase, user]);
   useEffect(() => {
     const savedTheme = window.localStorage.getItem("wildball-theme");
     setDarkMode(savedTheme ? savedTheme === "dark" : window.matchMedia("(prefers-color-scheme: dark)").matches);
@@ -201,7 +227,20 @@ export default function Home() {
     }, { threshold: 0.6 });
     videos.forEach(video => observer.observe(video));
     return () => observer.disconnect();
-  }, [activeFeed]);
+  }, [activeFeed, livePosts]);
+  useEffect(() => {
+    const feed = document.getElementById("feed");
+    if (!feed || activeFeed === "following") return;
+    feed.querySelectorAll(".auto-feed-ad").forEach(ad => ad.remove());
+    [...feed.querySelectorAll<HTMLElement>(".post-latest")].forEach((post, index) => {
+      if ((index + 1) % 2) return;
+      const ad = document.createElement("article");
+      ad.className = "ad auto-feed-ad";
+      ad.innerHTML = "<div><small>SPONSORED · HARDWOOD HUSTLE</small><h1>Made for the last run.</h1><p>For the ones who stay late.</p></div><b>●</b><button type=\"button\">Shop ↗</button>";
+      ad.querySelector("button")?.addEventListener("click", () => note("Shop link opened"));
+      post.after(ad);
+    });
+  }, [activeFeed, livePosts]);
   const submitAuth = async (email: string, password: string, username: string): Promise<string> => {
     if (auth === "signup") {
       const normalizedUsername = username.trim().toLowerCase();
@@ -238,15 +277,15 @@ export default function Home() {
     document.cookie = `googtrans=/en/${code};path=/;max-age=31536000;SameSite=Lax`;
     window.location.reload();
   };
-  const orderedBase = feedOrder.map(index => base[index]);
+  const orderedBase = feedOrder.map(videoIndex => ({ post: base[videoIndex], videoIndex }));
   const posts = activeFeed === "following"
-    ? Array.from({ length: 12 }, (_, i) => ({ post: orderedBase[i % orderedBase.length], index: i })).filter(({ post }) => following.includes(post[0]))
+    ? Array.from({ length: 12 }, (_, i) => ({ ...orderedBase[i % orderedBase.length], index: i })).filter(({ post }) => following.includes(post[0]))
     : activeFeed === "explore"
-      ? Array.from({ length: 12 }, (_, i) => ({ post: orderedBase[(i + 2) % orderedBase.length], index: i + 20 }))
-      : Array.from({ length: 12 }, (_, i) => ({ post: orderedBase[i % orderedBase.length], index: i }));
+      ? []
+      : [];
 
-  return <>{user && <style>{".mobile-auth{display:none!important}"}</style>}{actionMenu === "comment" && <div className="modal-backdrop" onClick={() => setActionMenu(null)}><div className="post-action-panel" onClick={event => event.stopPropagation()}><button className="close" onClick={() => setActionMenu(null)} aria-label="Close">×</button><p>ADD A COMMENT</p><h2>Join the conversation</h2><textarea autoFocus value={commentDraft} onChange={event => setCommentDraft(event.target.value)} maxLength={500} placeholder="Write something positive..."></textarea><button className="publish" onClick={() => { if (!commentDraft.trim()) return; setCommentDraft(""); setActionMenu(null); note("Comment posted."); }}>Post comment</button></div></div>}{actionMenu === "more" && <div className="modal-backdrop" onClick={() => setActionMenu(null)}><div className="post-action-panel post-more-panel" onClick={event => event.stopPropagation()}><button className="close" onClick={() => setActionMenu(null)} aria-label="Close">×</button><p>POST OPTIONS</p><h2>What would you like to do?</h2><button onClick={() => { setActionMenu(null); note("Post saved to your collection."); }}>Save post</button><button onClick={() => { setActionMenu(null); note("Not interested — we will show fewer posts like this."); }}>Not interested</button><button className="report-action" onClick={() => { setActionMenu(null); note("Report received. Thanks for helping keep Wildball safe."); }}>Report post</button></div></div>}
-    <div className={`shell${darkMode ? " dark-mode" : ""}`} onClickCapture={(event) => { const action = (event.target as HTMLElement).closest(".actions button"); if (!action) return; if (action.classList.contains("creator-action")) { const badge = (event.target as HTMLElement).closest("i"); if (!badge) { event.preventDefault(); event.stopPropagation(); const username = action.closest(".post")?.querySelector(".creator b")?.textContent; if (username) window.location.assign(`/u/${username}`); } return; } if (action.classList.contains("comment")) { event.preventDefault(); event.stopPropagation(); setActionMenu("comment"); } if (action.classList.contains("more-action")) { event.preventDefault(); event.stopPropagation(); setActionMenu("more"); } }}>
+  return <>{user && <style>{".mobile-auth{display:none!important}"}</style>}{actionMenu === "comment" && <div className="modal-backdrop" onClick={() => { setActionMenu(null); setCommentPostId(null); }}><div className="post-action-panel" onClick={event => event.stopPropagation()}><button className="close" onClick={() => { setActionMenu(null); setCommentPostId(null); }} aria-label="Close">×</button><p>ADD A COMMENT</p><h2>Join the conversation</h2><textarea autoFocus value={commentDraft} onChange={event => setCommentDraft(event.target.value)} maxLength={500} placeholder="Write something positive..."></textarea><button className="publish" onClick={submitComment}>Post comment</button></div></div>}{actionMenu === "more" && <div className="modal-backdrop" onClick={() => setActionMenu(null)}><div className="post-action-panel post-more-panel" onClick={event => event.stopPropagation()}><button className="close" onClick={() => setActionMenu(null)} aria-label="Close">×</button><p>POST OPTIONS</p><h2>What would you like to do?</h2><button onClick={() => { setActionMenu(null); note("Post saved to your collection."); }}>Save post</button><button onClick={() => { setActionMenu(null); note("Not interested — we will show fewer posts like this."); }}>Not interested</button><button className="report-action" onClick={() => { setActionMenu(null); note("Report received. Thanks for helping keep Wildball safe."); }}>Report post</button></div></div>}
+    <div className={`shell${darkMode ? " dark-mode" : ""}`} onClickCapture={(event) => { const action = (event.target as HTMLElement).closest(".actions button"); if (!action) return; if (action.classList.contains("creator-action")) { const badge = (event.target as HTMLElement).closest("i"); if (!badge) { event.preventDefault(); event.stopPropagation(); const username = action.closest(".post")?.querySelector(".creator b")?.textContent; if (username) window.location.assign(`/u/${username}`); } return; } if (action.classList.contains("comment")) { event.preventDefault(); event.stopPropagation(); const source = action.closest(".post")?.querySelector("source")?.getAttribute("src"); setCommentPostId(livePosts.find(post => post.video_path === source)?.id || null); setActionMenu("comment"); } if (action.classList.contains("more-action")) { event.preventDefault(); event.stopPropagation(); setActionMenu("more"); } }}>
       <aside>
         {languageDialog && <LanguageDialog value={language} onSave={saveLanguage} onClose={() => setLanguageDialog(false)} />}
         <a className="logo" href="#feed"><Icon name="ball" className="icon-brand"/><span>WILDBALL<small>MEDIA</small></span></a>
@@ -259,12 +298,11 @@ export default function Home() {
       <main>
         <header><a className="mobile-logo" aria-label="Wildball home">W<span>•</span>B</a><div className="tabs"><button className={activeFeed === "for-you" ? "selected" : ""} onClick={() => selectFeed("for-you")}>FOR YOU</button><button className={activeFeed === "following" ? "selected" : ""} onClick={() => selectFeed("following")}>FOLLOWING</button></div><button className="search" aria-label="Search users" onClick={() => window.location.assign("/search")}><Icon name="search"/></button><button className="mobile-auth" onClick={openAuth}>Log in</button></header>
         <section className="stories"><button className="story" onClick={() => setComposer(true)}><span>+</span>Your story</button>{[1,2,3,4,5].map(n => { const username = `courtvision${String(n).padStart(2, "0")}`; return <button className="story" key={username} onClick={() => window.location.assign(`/u/${username}`)}><img src={`/assets/avatars/${username}.png`} alt={`${username}'s profile`}/>{username}</button>; })}</section>
-        <section id="feed" onClick={(event) => { const target = event.target as HTMLElement; if (target.closest(".follow, .creator-action")) return; if (!target.closest(".creator")) return; const username = target.closest(".post")?.querySelector(".creator b")?.textContent; if (username) window.location.assign(`/u/${username}`); }}>{activeFeed === "following" && posts.length === 0 && <div className="empty-feed"><Icon name="people"/><h1>Build your court.</h1><p>Follow hoopers from the right rail to see their clips here.</p><button onClick={() => selectFeed("explore")}>Explore players</button></div>}{activeFeed === "explore" && <div className="feed-heading"><small>DISCOVER THE COURT</small><h1>Explore</h1><p>Fresh clips and conversations from the Wildball community.</p></div>}{posts.map(({ post: p, index: i }) => { const isLiked = liked.includes(i), isFollowing = following.includes(p[0]); return <div key={i}>
-          <article className={`post post-${i % 5} photo`}><div className="art"><i></i><b>●</b></div><video ref={element => { if (element) feedVideoRefs.current.set(i, element); else feedVideoRefs.current.delete(i); }} className="hero" loop muted playsInline preload="none" poster={`/assets/wildball-${covers[i % 4]}.png`} aria-label="Basketball action video"><source src={`/videos/${clips[i % clips.length]}.mp4`} type="video/mp4"/></video><div className="veil"></div><small className="tag"><span></span>{p[6]}</small><button className="sound" aria-label="Toggle sound" onClick={() => note("Clips play muted for now")}><Icon name="volume"/></button>
+        <section id="feed" onClick={(event) => { const target = event.target as HTMLElement; if (target.closest(".follow, .creator-action")) return; if (!target.closest(".creator")) return; const username = target.closest(".post")?.querySelector(".creator b")?.textContent; if (username) window.location.assign(`/u/${username}`); }}>{activeFeed !== "following" && livePosts.map((post, position) => { const i = 1000 + position, username = post.author?.username || "wildball", avatar = post.author?.avatar_path || "/assets/avatars/courtvision01.png", isLiked = likedLivePosts.includes(post.id), isFollowing = following.includes(username); return <article className="post post-latest photo" key={post.id}><div className="art"><i></i><b>●</b></div><video ref={element => { if (element) feedVideoRefs.current.set(i, element); else feedVideoRefs.current.delete(i); }} className="hero" loop muted playsInline preload="metadata" poster={post.poster_path || undefined} aria-label="Latest basketball video"><source src={post.video_path} type="video/mp4"/></video><div className="veil"></div><small className="tag"><span></span>LATEST UPLOAD</small><button className="sound" aria-label="Toggle sound" onClick={() => note("Clips play muted for now")}><Icon name="volume"/></button><div className="copy"><div className="creator"><img src={avatar} alt={username}/><span><b>{username}</b><small>{new Date(post.created_at).toLocaleDateString()}</small></span><button className={`follow ${isFollowing ? "on" : ""}`} onClick={() => toggleFollow(username)}>{isFollowing ? "Following" : "Follow"}</button></div><h1>{post.caption || "NEW ON WILDBALL"} <em><Icon name="ball"/></em></h1><p>Fresh from <b>@{username}</b></p><button className="audio" onClick={() => note("Original sound selected")}><Icon name="volume"/>original sound · {username}</button></div><div className="actions"><button className="creator-action" aria-label={`Follow ${username}`} onClick={() => toggleFollow(username)}><img src={avatar} alt=""/><i><Icon name="plus"/></i></button><button className="credit-action" aria-label={`Send credits to ${username}`} onClick={() => openCreditGift(username)}><strong><Icon name="coins"/></strong><small>Credits</small></button><button className={`like ${isLiked ? "liked" : ""}`} aria-label="Like post" onClick={() => void toggleLivePostLike(post.id)}><strong><Icon name="heart"/></strong><small>Like</small></button><button className="comment" aria-label="Comment" onClick={() => { setCommentPostId(post.id); setActionMenu("comment"); }}><strong><Icon name="comment"/></strong><small>Comment</small></button><button className="share" aria-label="Share post" onClick={() => { navigator.clipboard?.writeText(`${location.origin}/?post=${post.id}`); note("Link copied — ready to share"); }}><strong><Icon name="share"/></strong><small>Share</small></button><button className="more-action" aria-label="More options" onClick={() => setActionMenu("more")}><strong><Icon name="more"/></strong></button></div><div className="progress"><span></span></div></article>; })}{activeFeed === "following" && posts.length === 0 && <div className="empty-feed"><Icon name="people"/><h1>Build your court.</h1><p>Follow hoopers from the right rail to see their clips here.</p><button onClick={() => selectFeed("explore")}>Explore players</button></div>}{activeFeed === "explore" && <div className="feed-heading"><small>DISCOVER THE COURT</small><h1>Explore</h1><p>Fresh clips and conversations from the Wildball community.</p></div>}{posts.map(({ post: p, videoIndex, index: i }) => { const isLiked = liked.includes(i), isFollowing = following.includes(p[0]); return <div key={i}>
+          <article className={`post post-${videoIndex % 5} photo`}><div className="art"><i></i><b>●</b></div><video ref={element => { if (element) feedVideoRefs.current.set(i, element); else feedVideoRefs.current.delete(i); }} className="hero" loop muted playsInline preload="none" poster={`/assets/wildball-${covers[videoIndex % covers.length]}.png`} aria-label="Basketball action video"><source src={`/videos/${clips[videoIndex % clips.length]}.mp4`} type="video/mp4"/></video><div className="veil"></div><small className="tag"><span></span>{p[6]}</small><button className="sound" aria-label="Toggle sound" onClick={() => note("Clips play muted for now")}><Icon name="volume"/></button>
             <div className="copy"><div className="creator"><img src={`/assets/avatars/${p[0]}.png`} alt={p[0]}/><span><b>{p[0]}</b><small>{p[1]}</small></span><button className={`follow ${isFollowing ? "on" : ""}`} onClick={() => toggleFollow(p[0])}>{isFollowing ? "Following" : "Follow"}</button></div><h1>{p[3]} <em><Icon name="ball"/></em></h1><p>{p[4]} <b>{p[5]}</b></p><button className="audio" onClick={() => note("Original sound selected")}><Icon name="volume"/>original sound · {p[0]}</button></div>
             <div className="actions"><button className="creator-action" aria-label={`Follow ${p[0]}`} onClick={() => toggleFollow(p[0])}><img src={`/assets/avatars/${p[0]}.png`} alt=""/><i><Icon name="plus"/></i></button><button className="credit-action" aria-label={`Send credits to ${p[0]}`} onClick={() => openCreditGift(p[0])}><strong><Icon name="coins"/></strong><small>Credits</small></button><button className={`like ${isLiked ? "liked" : ""}`} aria-label="Like post" onClick={() => toggleLike(i)}><strong><Icon name="heart"/></strong><small>{8 + i * 3}.{i % 9}K</small></button><button className="comment" aria-label="Comment" onClick={() => setComposer(true)}><strong><Icon name="comment"/></strong><small>{117 + i * 83}</small></button><button className="share" aria-label="Share post" onClick={() => { navigator.clipboard?.writeText(location.href); note("Link copied — ready to share"); }}><strong><Icon name="share"/></strong><small>Share</small></button><button className="more-action" aria-label="More options" onClick={() => note("More options opened")}><strong><Icon name="more"/></strong></button></div><div className="progress"><span></span></div>
           </article>{activeFeed !== "following" && (i === 1 || i === 4) && <article className="ad"><div><small>SPONSORED · HARDWOOD HUSTLE</small><h1>Made for the last run.</h1><p>For the ones who stay late.</p></div><b>●</b><button onClick={() => note("Shop link opened")}>Shop ↗</button></article>}</div>; })}</section>
-        {activeFeed !== "following" && livePosts.length > 0 && <section className="live-feed demo-feed"><h2>Fresh from demo hoopers</h2>{livePosts.map(post => <article className="live-post" key={post.id}><video src={post.video_path} controls playsInline preload="metadata" poster={post.poster_path || undefined}/><div><b>{post.author?.display_name || post.author?.username || "Wildball hooper"}</b><small>@{post.author?.username || "wildball"}</small><p>{post.caption}</p></div></article>)}</section>}
       </main>
       <aside className="right"><div className="online"><span></span>12,843 hoopers online</div><section><h2>Trending now <button onClick={() => note("All trends opened")}>See all</button></h2>{["# WNBAPlayoffs", "# InMyBag", "# DunkOfTheDay"].map((x, i) => <button className="trend" key={x} onClick={() => note(`${x} selected`)}><b>{x}</b><small>{["48.2K", "32.1K", "18.7K"][i]} posts ↗</small></button>)}</section><section><h2>Players to follow <button onClick={() => note("Suggestions opened")}>See all</button></h2>{demoProfiles.length ? demoProfiles.map(demo => <div className="person" key={demo.id} role="link" tabIndex={0} onClick={() => window.location.assign(`/u/${demo.username}`)} onKeyDown={event => { if (event.key === "Enter") window.location.assign(`/u/${demo.username}`); }}><img src={`/assets/avatars/${demo.username}.png`} alt={demo.username}/><span><b>{demo.username}</b><small>{demo.location || "Wildball demo hooper"}</small></span><button className={`follow ${following.includes(demo.username) ? "on" : ""}`} onClick={event => { event.stopPropagation(); void toggleDemoFollow(demo); }}>{following.includes(demo.username) ? "Following" : "Follow"}</button></div>) : <p className="empty-real">Loading demo hoopers…</p>}</section><footer>About · Newsroom · Careers · Help<br/>Community Guidelines · Privacy<br/><br/>© 2026 WILDBALL MEDIA</footer></aside>
     </div>

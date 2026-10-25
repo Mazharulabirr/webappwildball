@@ -2,3 +2,18 @@
 .post:has(.creator .follow.on) .creator-action i .icon{display:none}
 .post:has(.creator .follow.on) .creator-action i::after{content:"✓";font-family:Arial,sans-serif;font-size:13px;font-weight:900;line-height:1;color:#fff}
 .post:has(.creator .follow.on) .creator-action i{background:#202a25}
+
+/* A newly created profile has no avatar yet, so replace the demo photo with a neutral badge. */
+.post-latest .creator:has(img[src$="/courtvision01.png"]){position:relative}
+.post-latest .creator:has(img[src$="/courtvision01.png"])::before{content:"WB";position:absolute;z-index:1;left:0;top:0;width:32px;height:32px;display:grid;place-items:center;border:1px solid #fff;border-radius:50%;background:#343a38;color:#fff;font:800 10px Arial,sans-serif}
+.post-latest .creator-action:has(img[src$="/courtvision01.png"]){position:relative}
+.post-latest .creator-action:has(img[src$="/courtvision01.png"])::before{content:"WB";position:absolute;z-index:1;left:0;top:0;width:40px;height:40px;display:grid;place-items:center;border:2px solid #fff;border-radius:50%;background:#343a38;color:#fff;font:800 11px Arial,sans-serif}
+.post-latest .creator-action:has(img[src$="/courtvision01.png"]) i{z-index:2}
+
+/* Sponsored breaks should feel native to the dark video feed, not like a neon banner. */
+.auto-feed-ad{background:linear-gradient(125deg,#181d21,#273238);border:1px solid #435158;box-shadow:0 10px 28px #07101452;color:#f5f1e8}
+.auto-feed-ad small{color:#f1a35f;letter-spacing:.9px}
+.auto-feed-ad h1{color:#fff}
+.auto-feed-ad>b{color:#e66b3f;text-shadow:-6px 4px #0b1013}
+.auto-feed-ad>button{background:#e66b3f;color:#161a1c;border-radius:5px}
+.auto-feed-ad>button:hover{background:#ff855b}
