@@ -241,25 +241,9 @@ export default function Home() {
       post.after(ad);
     });
   }, [activeFeed, livePosts]);
-  const submitAuth = async (email: string, password: string, username: string): Promise<string> => {
-    if (auth === "signup") {
-      const normalizedUsername = username.trim().toLowerCase();
-      if (!/^[a-z0-9._]{3,30}$/.test(normalizedUsername)) return "Username must be 3–30 characters: letters, numbers, dots, or underscores.";
-      const { data, error } = await supabase.auth.signUp({ email: email.trim(), password, options: { data: { username: normalizedUsername }, emailRedirectTo: `${process.env.NEXT_PUBLIC_SITE_URL || window.location.origin}/` } });
-      if (error) return error.message;
-      if (data.user && data.session) {
-        const { error: profileError } = await supabase.from("profiles").upsert({ id: data.user.id, username: normalizedUsername, display_name: username.trim() });
-        if (profileError) return profileError.message;
-      }
-      return data.session ? "Account created — welcome to Wildball!" : "Account created. Check your email to confirm it.";
-    }
-    const { data, error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
-    if (error) return error.message;
-    if (data.user) {
-      const username = (data.user.user_metadata.username as string | undefined) || email.split("@")[0].replace(/[^a-z0-9._]/gi, "").toLowerCase().slice(0, 30);
-      await supabase.from("profiles").upsert({ id: data.user.id, username, display_name: username }, { onConflict: "id", ignoreDuplicates: true });
-    }
-    return "Welcome back to Wildball!";
+  const submitAuth = async (_email: string, _password: string, _username: string): Promise<string> => {
+    router.push(auth === "signup" ? "/login?mode=signup" : "/login");
+    return "Continue on the secure sign-in page.";
   };
   const saveProfile = async () => {
     if (!user) return;
