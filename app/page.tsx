@@ -230,8 +230,10 @@ export default function Home() {
   }, [activeFeed, livePosts]);
   useEffect(() => {
     const feed = document.getElementById("feed");
-    if (!feed || activeFeed === "following") return;
-    feed.querySelectorAll(".auto-feed-ad").forEach(ad => ad.remove());
+    if (!feed) return;
+    const clearAds = () => feed.querySelectorAll(".auto-feed-ad").forEach(ad => ad.remove());
+    clearAds();
+    if (activeFeed === "following") return clearAds;
     [...feed.querySelectorAll<HTMLElement>(".post-latest")].forEach((post, index) => {
       if ((index + 1) % 2) return;
       const ad = document.createElement("article");
@@ -240,6 +242,7 @@ export default function Home() {
       ad.querySelector("button")?.addEventListener("click", () => note("Shop link opened"));
       post.after(ad);
     });
+    return clearAds;
   }, [activeFeed, livePosts]);
   const submitAuth = async (_email: string, _password: string, _username: string): Promise<string> => {
     window.location.assign(auth === "signup" ? "/login?mode=signup" : "/login");
