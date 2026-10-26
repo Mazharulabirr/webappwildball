@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { createClient } from "../../../lib/supabase/client";
 import CreditGiftDialog from "../../credit-gift-dialog";
+import ProfileVideoGallery from "../../profile-video-gallery";
 
 type Profile = { id:string; username:string; display_name:string|null; bio:string|null; location:string|null; avatar_path:string|null };
 type AthletePassport = { sport:string; position:string; team_name:string; jersey_number:string; height:string; dominant_hand:string; age_group:string; play_style:string; season_games:number; season_points:number; season_rebounds:number; season_assists:number; achievements:string[]; awards:string[]; career_history:string[] };
@@ -110,7 +111,7 @@ export default function PublicProfilePage() {
       </section>
       <AthletePassportCard passport={passport} posts={posts} player={profile}/>
       <nav className="public-tabs"><b>Videos <em>{posts.length}</em></b><span>Reposts</span><span>Liked</span></nav>
-      <section id="highlight-clips" className="public-videos">{posts.length?posts.map(post=><article key={post.id}><video src={post.video_path} controls playsInline preload="metadata" poster={post.poster_path||undefined}/><p>{post.caption||"Wildball post"}</p></article>):<p className="profile-loading">No published videos yet.</p>}</section>
+      <section id="highlight-clips">{posts.length?<ProfileVideoGallery posts={posts} username={profile.username} displayName={profile.display_name}/>:<p className="profile-loading">No published videos yet.</p>}</section>
     </div>
     {notice&&<p className="profile-notice">{notice}</p>}
     {giftOpen&&<CreditGiftDialog recipientId={profile.id} recipientName={profile.display_name||profile.username} onClose={()=>setGiftOpen(false)}/>}

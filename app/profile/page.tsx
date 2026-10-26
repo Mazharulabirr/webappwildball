@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { User } from "@supabase/supabase-js";
 import { createClient } from "../../lib/supabase/client";
+import ProfileVideoGallery from "../profile-video-gallery";
 
 type Profile={id:string;username:string;display_name:string|null;bio:string|null;location:string|null};
 type Post={id:string;caption:string;poster_path:string|null;video_path:string;created_at:string};
@@ -24,7 +25,7 @@ export default function ProfilePage(){
    <section className="passport-profile-entry"><span><small>ATHLETE PASSPORT</small><b>Build your shareable player profile</b><em>Add your position, team, stats, awards &amp; career history.</em></span><div><a className="passport-profile-preview" href={`/u/${profile.username}`}>View public Passport</a><a className="passport-profile-edit" href="/passport">Edit Passport →</a></div></section>
    {editing&&<section className="real-editor"><label>Name<input value={draft.display_name} onChange={event=>setDraft({...draft,display_name:event.target.value})}/></label><label>Location<input value={draft.location} onChange={event=>setDraft({...draft,location:event.target.value})}/></label><label>Bio<textarea value={draft.bio} onChange={event=>setDraft({...draft,bio:event.target.value})}/></label><button onClick={save}>Save profile</button></section>}
    <section className="real-posts"><div className="wb-profile-content-bar"><div><button className="active">▦ Videos</button><button disabled>♡ Liked</button></div><div className="wb-sort"><button className={sortOrder==="latest"?"active":""} onClick={()=>setSortOrder("latest")}>Latest</button><button className={sortOrder==="oldest"?"active":""} onClick={()=>setSortOrder("oldest")}>Oldest</button></div></div><div className="wb-video-heading"><h2>Your videos</h2><span>{posts.length} {posts.length===1?"video":"videos"}</span></div>
-   {posts.length?<div className="wb-video-list">{displayedPosts.map(post=><article key={post.id}><video src={post.video_path} poster={post.poster_path||undefined} controls playsInline preload="auto" onLoadedData={event=>{if(!post.poster_path&&event.currentTarget.currentTime===0)event.currentTarget.currentTime=0.1}}/><div><p>{post.caption||"Untitled video"}</p><time>{new Date(post.created_at).toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"})}</time></div></article>)}</div>:<div className="wb-empty-videos"><i>▦</i><h2>Share your first highlight</h2><p>Your videos will appear here.</p><a href="/">Create a post</a></div>}</section>
+   {posts.length?<ProfileVideoGallery posts={displayedPosts} username={profile.username} displayName={profile.display_name} variant="own"/>:<div className="wb-empty-videos"><i>▦</i><h2>Share your first highlight</h2><p>Your videos will appear here.</p><a href="/">Create a post</a></div>}</section>
    {message&&<p className="login-message">{message}</p>}
  </main>
 }
