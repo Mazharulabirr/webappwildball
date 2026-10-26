@@ -242,7 +242,7 @@ export default function Home() {
     });
   }, [activeFeed, livePosts]);
   const submitAuth = async (_email: string, _password: string, _username: string): Promise<string> => {
-    router.push(auth === "signup" ? "/login?mode=signup" : "/login");
+    window.location.assign(auth === "signup" ? "/login?mode=signup" : "/login");
     return "Continue on the secure sign-in page.";
   };
   const saveProfile = async () => {
