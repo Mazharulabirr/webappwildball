@@ -33,12 +33,12 @@ test('username collision retries without losing the authenticated account', asyn
 test('profile permission failures surface instead of silently completing signup', async () => {
   const c = profileClient(null, [{ code: '42501' }]); await assert.rejects(ensureProfile(c, user), { code: '42501' });
 });
-function callback(client) {
+function callback(client, env = { NEXT_PUBLIC_SITE_URL: 'https://wildball.io' }) {
   return load('app/auth/callback/route.ts', {
     'next/server': { NextResponse: { redirect: url => ({ location: url.href }) } },
     '../../../lib/supabase/server': { createClient: async () => client },
     '../../../lib/auth/profile': { ensureProfile: async () => {} }
-  }, { URL, process: { env: { NEXT_PUBLIC_SITE_URL: 'https://wildball.io' } } }).GET;
+  }, { URL, process: { env } }).GET;
 }
 test('callback rejects missing tokens and ignores external next redirects', async () => {
   const response = await callback({})({ url: 'http://localhost:3000/auth/callback?next=https://evil.example' });
@@ -73,6 +73,14 @@ test('www callbacks keep their cookie host through the VPS reverse proxy', async
 test('untrusted forwarded hosts cannot turn the callback into an open redirect', async () => {
   const response = await callback({})({ url: 'http://localhost/auth/callback', headers: { get: () => 'evil.example' } });
   assert.equal(response.location, 'https://wildball.io/login?auth_error=expired');
+});
+test('production ignores stale VPS IP configuration for confirmation redirects', async () => {
+  const env = { NODE_ENV: 'production', NEXT_PUBLIC_SITE_URL: 'http://72.62.72.92' };
+  const get = callback({ auth: { exchangeCodeForSession: async () => ({ data: { user }, error: null }) } }, env);
+  const response = await get({ url: 'http://72.62.72.92/auth/callback?code=valid', headers: { get: () => 'wildball.io' } });
+  assert.equal(response.location, 'https://wildball.io/');
+  const failure = await get({ url: 'http://72.62.72.92/auth/callback' });
+  assert.equal(failure.location, 'https://wildball.io/login?auth_error=expired');
 });
 function providerRoute(settings, ok = true) {
   return load('app/api/auth/providers/route.ts', {

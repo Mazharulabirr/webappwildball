@@ -4,7 +4,11 @@ import { ensureProfile } from "../../../lib/auth/profile";
 
 export async function GET(request: NextRequest) {
   const url = new URL(request.url);
-  const configured = new URL(process.env.NEXT_PUBLIC_SITE_URL || (process.env.NODE_ENV === "production" ? "https://wildball.io" : url.origin));
+  // Production redirects must stay on the public HTTPS domain even when a
+  // legacy VPS environment variable or reverse-proxy Host contains its IP.
+  const configured = new URL(process.env.NODE_ENV === "production"
+    ? "https://wildball.io"
+    : process.env.NEXT_PUBLIC_SITE_URL || url.origin);
   const host = request.headers?.get("x-forwarded-host")?.split(",")[0].trim() || url.host;
   const allowedHosts = new Set([configured.host]);
   if (["wildball.io", "www.wildball.io"].includes(configured.hostname)) {
