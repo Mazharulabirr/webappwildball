@@ -1,0 +1,23 @@
+.wb-route-loading{min-height:100svh;display:grid;place-items:center;background:var(--paper,#f4f1eb);color:var(--ink,#171b19);padding:24px}
+.wb-loading{width:min(360px,100%);margin:32px auto;padding:28px 20px;text-align:center;color:var(--ink,#171b19);animation:wb-loading-enter .35s ease-out both}
+.wb-loading-mark{width:64px;height:64px;display:grid;place-items:center;margin:0 auto 18px;border-radius:22px;background:#ed5b3110;border:1px solid #ed5b3124;animation:wb-loading-breathe 2.8s ease-in-out infinite}
+.wb-loading-mark svg{width:38px;height:38px;fill:none;stroke:#e6653e;stroke-width:1.7;stroke-linecap:round}
+.wb-loading p{display:flex;align-items:center;justify-content:center;gap:10px;margin:0;font:600 13px/1.6 Archivo,Arial,sans-serif;color:inherit}
+.wb-loading-dots{display:inline-flex;gap:4px}
+.wb-loading-dots i{width:4px;height:4px;border-radius:50%;background:#e6653e;animation:wb-loading-dot 1.8s ease-in-out infinite}
+.wb-loading-dots i:nth-child(2){animation-delay:.2s}.wb-loading-dots i:nth-child(3){animation-delay:.4s}
+.wb-loading-preview{display:grid;gap:10px;margin:24px auto 0;max-width:260px}
+.wb-loading-preview span{display:block;height:10px;border-radius:8px;background:linear-gradient(90deg,#88888812,#88888826,#88888812);background-size:200% 100%;animation:wb-loading-shimmer 2.8s ease-in-out infinite}
+.wb-loading-preview span:nth-child(2){width:82%}.wb-loading-preview span:nth-child(3){width:58%}
+.wb-loading-compact{padding:14px 8px;margin:8px auto}.wb-loading-compact .wb-loading-mark{width:40px;height:40px;margin-bottom:10px;border-radius:14px}.wb-loading-compact .wb-loading-mark svg{width:26px;height:26px}
+html.dark-mode .wb-loading,.passport-page .wb-loading{color:#e8e4df}
+.profile-loading-page:has(.wb-loading){display:grid;place-items:center;min-height:100svh}
+.public-profile-state:has(.wb-loading){animation:wb-loading-enter .35s ease-out both}
+.public-profile-state:has(.wb-loading)>i{display:none}
+/* Busy buttons keep their labels legible and their layout stable. */
+:is(.publish,.auth-submit,.login-card form button,.credit-send):disabled{cursor:progress;transition:opacity .25s ease;opacity:.72}
+@keyframes wb-loading-enter{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}
+@keyframes wb-loading-breathe{0%,100%{transform:scale(.97);opacity:.75}50%{transform:scale(1);opacity:1}}
+@keyframes wb-loading-dot{0%,70%,100%{opacity:.3}35%{opacity:1}}
+@keyframes wb-loading-shimmer{0%{background-position:100% 0}100%{background-position:-100% 0}}
+@media(prefers-reduced-motion:reduce){.wb-loading,.wb-loading-mark,.wb-loading-dots i,.wb-loading-preview span{animation:none!important;transform:none!important}}

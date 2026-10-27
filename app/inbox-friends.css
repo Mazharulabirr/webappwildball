@@ -1,0 +1,46 @@
+.inbox-friends{height:100dvh;min-height:0;background:var(--paper);color:var(--ink);overflow:hidden}
+.inbox-friends .inbox-list{height:100%;min-height:0;overflow-y:auto;background:var(--paper);color:var(--ink)}
+.inbox-friends .inbox-back{color:var(--ink)}
+.inbox-friends.inbox-modern .inbox-title{display:grid;grid-template-columns:40px minmax(0,1fr) 40px;align-items:center;gap:12px;margin:0 0 16px!important}
+.inbox-friends.inbox-modern .inbox-title .inbox-tool{position:static;display:grid;place-items:center;width:40px;height:40px;padding:0;border:1px solid var(--line);border-radius:12px;background:var(--paper);color:var(--ink);box-shadow:none;transform:none;cursor:pointer}
+.inbox-friends .inbox-back::after{content:none}
+.inbox-friends .inbox-tool svg{display:block;width:20px;height:20px;pointer-events:none}
+.inbox-friends.inbox-modern .inbox-title .inbox-tool:hover{background:var(--line);color:var(--ink);transform:none}
+.inbox-friends .inbox-tool:focus-visible{outline:2px solid var(--orange);outline-offset:3px}
+.inbox-folders{display:flex;gap:6px;margin:0 0 16px;padding:5px;border:1px solid var(--line);border-radius:12px}
+.inbox-folders button{flex:1;border:0;border-radius:8px;padding:10px 7px;background:transparent;color:var(--muted);font:700 12px Archivo,Arial;cursor:pointer}
+.inbox-folders button[aria-pressed=true]{background:var(--orange);color:white}
+.inbox-folders button span{margin-left:5px;font-size:10px}
+.inbox-friends .inbox-folder-empty{margin:15px 8px;color:var(--muted);font-size:12px;line-height:1.6}
+.inbox-friends .chat-window{height:100%;min-height:0;grid-template-rows:auto minmax(0,1fr) auto;background:var(--paper)}
+.inbox-friends .chat-window header{position:static;justify-content:flex-start;height:auto;min-height:76px;padding:16px 24px;flex-shrink:0;backdrop-filter:none;background:var(--paper);border-color:var(--line)}
+.inbox-friends .chat-window header>div{min-width:0}
+.inbox-friends .chat-window header b{overflow-wrap:anywhere}
+.inbox-friends .chat-window header small{color:var(--muted);line-height:1.5}
+.inbox-friends .chat-messages{min-height:0;padding:24px clamp(16px,4vw,64px);overflow-y:auto;background:var(--paper);background-image:none}
+.inbox-friends .chat-messages>p{overflow-wrap:anywhere;white-space:pre-wrap;flex-shrink:0}
+.inbox-friends .chat-messages .mine{color:white}
+.inbox-friends .chat-messages .theirs{background:var(--paper);border:1px solid var(--line);color:var(--ink)}
+.inbox-friends .chat-window form{background:var(--paper);border-color:var(--line);padding:16px 24px}
+.inbox-friends .chat-window input{color:var(--ink);background:var(--paper);border-color:var(--line)}
+.inbox-friends .message-request-banner{flex-shrink:0;align-self:stretch;padding:16px;border:1px solid var(--line);border-radius:12px;margin-bottom:12px;background:#ff57220c}
+.inbox-friends .message-request-banner strong{font-size:13px}
+.inbox-friends .message-request-banner p{max-width:none;padding:0;margin:6px 0 10px;color:var(--muted);font-size:12px;background:none;box-shadow:none;border:0}
+.inbox-friends .message-request-banner button{border:0;border-radius:7px;background:var(--orange);color:white;font-weight:700;padding:10px 12px;cursor:pointer}
+.inbox-friends .message-request-banner small{display:block;color:var(--muted);font-size:11px}
+.inbox-friends .inbox-no-selection{grid-row:1/-1;max-width:460px;padding:24px;line-height:1.6}
+.inbox-friends .empty-chat h2{color:var(--ink)}
+.inbox-friends .empty-chat a{display:inline-block;margin-top:12px;color:var(--orange);font-size:13px;font-weight:700}
+/* Real contacts must not inherit the demo's generated avatar images. */
+.inbox-friends.inbox-modern .real-conversations button>span,.inbox-friends.inbox-modern .chat-window header>span{background-image:none!important;font-size:16px!important;color:white!important;background-color:var(--orange)}
+@media(max-width:720px){
+  .inbox-friends.inbox-modern{grid-template-columns:1fr;grid-template-rows:auto minmax(0,1fr)}
+  .inbox-friends.inbox-modern .inbox-list{height:auto;max-height:232px;padding:12px 16px 8px;background:var(--paper);border-color:var(--line)}
+  .inbox-friends .inbox-folders{margin:4px 0 9px;padding:3px}
+  .inbox-friends .inbox-folders button{padding:8px}
+  .inbox-friends.inbox-modern .conversation-list.real-conversations{display:flex;min-height:0}
+  .inbox-friends .inbox-folder-empty{margin:7px;font-size:11px}
+  .inbox-friends.inbox-modern .chat-window header{min-height:68px;padding:12px 16px}
+  .inbox-friends .chat-window form{padding:10px 12px calc(12px + env(safe-area-inset-bottom))}
+  .inbox-friends .chat-window form button:after{content:"↑"}
+}

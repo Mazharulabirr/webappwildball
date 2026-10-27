@@ -1,4 +1,5 @@
 "use client";
+import LoadingState from "../loading-state";
 
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -43,7 +44,7 @@ export default function SearchPage() {
     <header><a href="/" className="search-back">← Back to Wildball</a><span>DISCOVER PLAYERS</span></header>
     <section><p className="search-kicker">FIND YOUR COURT</p><h1>Search players</h1><p className="search-copy">Search anyone by their name or exact <b>@username</b>.</p>
       <form className="player-search-input" onSubmit={submit}><span>⌕</span><input autoFocus value={query} onChange={event => setQuery(event.target.value)} placeholder="Name or @username" autoComplete="off" spellCheck={false}/><button type="button" onClick={() => setQuery("")} aria-label="Clear search" hidden={!query}>×</button></form>
-      {loading && <p className="search-state search-loading"><i/>Searching players…</p>}{message && <p className="search-state">{message}</p>}
+      {loading && <LoadingState label="Finding players" compact/>}{message && <p className="search-state">{message}</p>}
       <div className="search-results">{results.map(profile => { const avatar = avatarUrl(profile.avatar_path); return <button key={profile.id} onClick={() => router.push(`/u/${encodeURIComponent(profile.username)}`)}>{avatar ? <img src={avatar} alt=""/> : <span>{(profile.display_name || profile.username)[0].toUpperCase()}</span>}<div><b>{profile.display_name || profile.username}</b><small>@{profile.username}{profile.location ? ` · ${profile.location}` : ""}</small><p>{profile.bio || "Wildball player"}</p></div><em>View profile ›</em></button>; })}</div>
     </section>
   </main>;

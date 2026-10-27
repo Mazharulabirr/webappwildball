@@ -17,3 +17,13 @@
 .auto-feed-ad>b{color:#e66b3f;text-shadow:-6px 4px #0b1013}
 .auto-feed-ad>button{background:#e66b3f;color:#161a1c;border-radius:5px}
 .auto-feed-ad>button:hover{background:#ff855b}
+
+.composer label small::after{content:" · 15s, 30s or max 1 min"}
+
+@media(max-width:650px){
+  .public-actions{display:grid!important;grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,1.25fr) 42px!important;gap:7px}
+  .public-actions .credit-gift-button{grid-column:auto!important;grid-row:auto!important;min-height:42px}
+  .public-actions .round-action{grid-column:auto!important;grid-row:auto!important}
+}
+
+.passport-icon-nav button.active{background:transparent;box-shadow:none}

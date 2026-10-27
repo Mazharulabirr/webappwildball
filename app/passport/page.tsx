@@ -1,4 +1,5 @@
 "use client";
+import LoadingState from "../loading-state";
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -57,7 +58,7 @@ export default function AthletePassportPage() {
     setStatus("Athlete Passport saved.");
   };
 
-  if (!profile) return <main className="passport-page"><div className="passport-state"><p>{status}</p>{loaded && <button onClick={()=>void load()}>Try again</button>}</div></main>;
+  if (!profile) return <main className="passport-page">{!loaded?<LoadingState label="Preparing your Athlete Passport"/>:<div className="passport-state"><p>{status}</p><button onClick={()=>void load()}>Try again</button></div>}</main>;
   return <main className="passport-page"><div className="passport-shell">
     <a className="passport-back" href="/profile">← Back to profile</a>
     <header className="passport-header"><p>WILDBALL ATHLETE PASSPORT</p><h1>{profile.display_name || profile.username}</h1><span>@{profile.username} · Keep your athletic story ready to share.</span></header>

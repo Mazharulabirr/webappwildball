@@ -1,4 +1,5 @@
 "use client";
+import LoadingState from "../loading-state";
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -45,8 +46,8 @@ export default function WalletPage(){
 
   return <main className="wallet-page">
     <div className="wallet-toolbar"><a className="wallet-back" href="/profile">← Profile</a><a href="/search">Send to a player</a></div>
-    <header className="wallet-head"><p>WILDBALL CREATOR WALLET</p><h1>Wallet &amp; credits</h1><span>Send support to other players and track the credits you receive.</span></header>
-    {loading?<div className="wallet-loading">Loading your wallet…</div>:<>
+    <div className="wallet-head"><p>WILDBALL CREATOR WALLET</p><h1>Wallet &amp; credits</h1><span>Send support to other players and track the credits you receive.</span></div>
+    {loading?<LoadingState label="Getting your wallet ready"/>:<>
       <section className="wallet-grid"><article className="wallet-card"><span>Available balance</span><strong>{available.toLocaleString()}</strong><small>credits · {money(available)}</small></article><article className="wallet-card"><span>Pending redemption</span><strong>{reserved.toLocaleString()}</strong><small>credits · {money(reserved)}</small></article></section>
       <section className="wallet-send-card"><div><p>GIVE SUPPORT</p><h2>Send credits to a player</h2><span>Search by name or username, open their profile, then tap Send credits.</span></div><a href="/search">Find a player →</a></section>
       <section className="wallet-redeem"><h2>Redeem credits</h2><p>{program.redemptions_enabled?`Minimum ${program.minimum_redemption_credits.toLocaleString()} credits. Payout identity verification is required.`:"Cash redemption is not live yet. A verified payout/KYC provider must be connected before real-money withdrawals can open."}</p><label>Credits to redeem<input type="number" min={program.minimum_redemption_credits} step="50" value={amount} onChange={event=>setAmount(Number(event.target.value)||0)}/></label><div className="wallet-cash-preview">Estimated value <b>{money(amount)}</b></div><button disabled={sending||!program.redemptions_enabled||amount<program.minimum_redemption_credits||amount>available} onClick={()=>void redeem()}>{sending?"Submitting…":program.redemptions_enabled?"Request redemption":"Redemption unavailable"}</button></section>

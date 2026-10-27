@@ -1,11 +1,21 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import dynamic from "next/dynamic";
+import { useRouter } from "next/navigation";
+import FeedVideo from "./feed-video";
+import FeedSoundButton from "./feed-sound-button";
+import { readTheme } from "../lib/theme";
+import { createFeedPivot, createFeedSession } from "../lib/feed-session";
 import { createClient as createSupabaseClient } from "../lib/supabase/client";
 import type { User } from "@supabase/supabase-js";
-import LanguageDialog from "./language-dialog";
+const LanguageDialog = dynamic(() => import("./language-dialog"));
 import { languageCodes } from "./language-codes";
-import CreditGiftDialog from "./credit-gift-dialog";
+const CreditGiftDialog = dynamic(() => import("./credit-gift-dialog"));
+import LoadingState from "./loading-state";
+import FollowingFeedStatus from "./following-feed-status";
+import { getFollowing, getFollowingPosts, getProfileStats, setPlayerFollow, type FollowedPlayer, type FeedCursor } from "../lib/social";
+import { notifyFollowChange, useSocialRefresh } from "../lib/use-social-refresh";
 
 type IconName = "ball" | "home" | "people" | "search" | "live" | "plus" | "check" | "heart" | "comment" | "share" | "more" | "volume" | "profile" | "inbox" | "settings" | "language" | "moon" | "sliders" | "studio" | "effects" | "coins" | "shop" | "help" | "logout";
 type Profile = { id: string; username: string; display_name: string | null; bio: string | null; location: string | null; avatar_path: string | null };
@@ -52,38 +62,103 @@ const shuffle = <T,>(items: T[]) => {
 const languages = ["English (US)", "বাংলা", "English (UK)", "हिन्दी", "اردو", "Español", "Français", "Português (Brasil)", "Afrikaans", "አማርኛ", "العربية", "Azərbaycan dili", "Башҡортса", "Беларуская", "Bosanski", "Български", "Català", "中文（简体）", "中文（繁體）", "Hrvatski", "Čeština", "Dansk", "Nederlands", "Eesti", "Filipino", "Suomi", "Galego", "Deutsch", "Ελληνικά", "ગુજરાતી", "עברית", "Magyar", "Bahasa Indonesia", "Italiano", "日本語", "ಕನ್ನಡ", "Қазақша", "한국어", "Kiswahili", "Latviešu", "Lietuvių", "മലയാളം", "मराठी", "Bahasa Melayu", "नेपाली", "Norsk", "فارسی", "Polski", "Português (Portugal)", "ਪੰਜਾਬੀ", "Română", "Русский", "Српски", "Slovenčina", "Slovenščina", "Soomaali", "Svenska", "தமிழ்", "తెలుగు", "ไทย", "Türkçe", "Українська", "Tiếng Việt", "Yorùbá", "isiZulu"];
 
 export default function Home() {
+  const router = useRouter();
+  const [feedMuted, setFeedMuted] = useState(true);
+  const toggleFeedSound = () => {
+    const nextMuted = !feedMuted;
+    document.querySelectorAll<HTMLVideoElement>("#feed video").forEach(video => {
+      video.muted = nextMuted;
+      if (!nextMuted && video.volume === 0) video.volume = 1;
+    });
+    setFeedMuted(nextMuted);
+  };
   const [composer, setComposer] = useState(false), [profile, setProfile] = useState(false), [auth, setAuth] = useState<"login" | "signup" | null>(null);
   const [moreMenu, setMoreMenu] = useState(false), [darkMode, setDarkMode] = useState(false), [themeReady, setThemeReady] = useState(false), [language, setLanguage] = useState("English (US)"), [languageDialog, setLanguageDialog] = useState(false);
-  const [liked, setLiked] = useState<number[]>([]), [following, setFollowing] = useState<string[]>([]), [toast, setToast] = useState("");
+  const [liked, setLiked] = useState<number[]>([]), [toast, setToast] = useState("");
+  const [followingProfiles, setFollowingProfiles] = useState<FollowedPlayer[]>([]);
+  const [pendingFollows, setPendingFollows] = useState<string[]>([]);
+  const following = followingProfiles.map(player => player.username);
+  const [followingReady, setFollowingReady] = useState(false), [followError, setFollowError] = useState("");
+  const [followingPosts, setFollowingPosts] = useState<LivePost[]>([]), [followingLoading, setFollowingLoading] = useState(false), [followingError, setFollowingError] = useState("");
+  const [followingHasMore, setFollowingHasMore] = useState(false);
+  const [socialCounts, setSocialCounts] = useState({ following: 0, followers: 0, likes: 0 });
+  const followBusy = useRef(new Set<string>());
+  const followReadId = useRef(0), followingReadId = useRef(0), followingBusy = useRef(false);
+  const followingCursor = useRef<FeedCursor | null>(null);
   const [likedLivePosts, setLikedLivePosts] = useState<string[]>([]), [commentPostId, setCommentPostId] = useState<string | null>(null);
   const [actionMenu, setActionMenu] = useState<"comment" | "more" | null>(null), [commentDraft, setCommentDraft] = useState("");
   const [activeFeed, setActiveFeed] = useState<"for-you" | "following" | "explore">("for-you");
   const feedVideoRefs = useRef(new Map<number, HTMLVideoElement>());
   const [supabase] = useState(() => createSupabaseClient());
   const [user, setUser] = useState<User | null>(null);
+  const userId = user?.id || null;
   const [profileData, setProfileData] = useState<Profile | null>(null);
   const [editingProfile, setEditingProfile] = useState(false);
   const [profileDraft, setProfileDraft] = useState({ display_name: "", bio: "", location: "" });
   const [selectedVideo, setSelectedVideo] = useState<File | null>(null), [postCaption, setPostCaption] = useState(""), [uploading, setUploading] = useState(false), [livePosts, setLivePosts] = useState<LivePost[]>([]), [demoProfiles, setDemoProfiles] = useState<DemoProfile[]>([]);
   const [feedOrder, setFeedOrder] = useState(() => base.map((_, index) => index));
+  const [feedLoading, setFeedLoading] = useState(true);
+  const [feedError, setFeedError] = useState("");
+  const feedSession = useRef<ReturnType<typeof createFeedSession<LivePost>> | null>(null);
+  const feedRequest = useRef(false);
+  const feedHasMore = useRef(true);
+  const loadMoreRef = useRef<HTMLDivElement>(null);
+  const [hasMore, setHasMore] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [giftRecipient, setGiftRecipient] = useState<DemoProfile | null>(null);
   const note = (text: string) => { setToast(text); window.setTimeout(() => setToast(""), 2200); };
-  const toggleFollow = (name: string) => {
-    const demo = demoProfiles.find(profile => profile.username === name);
-    if (demo) { void toggleDemoFollow(demo); return; }
-    setFollowing(old => old.includes(name) ? old.filter(x => x !== name) : [...old, name]);
-  };
-  const toggleDemoFollow = async (demo: DemoProfile) => {
+  const refreshFollowing = useCallback(async () => {
+    const request = ++followReadId.current;
+    if (!userId) { setFollowingProfiles([]); setFollowingReady(true); setFollowError(""); setSocialCounts({ following: 0, followers: 0, likes: 0 }); return; }
+    try {
+      const [players, counts] = await Promise.all([getFollowing(supabase, userId), getProfileStats(supabase, userId)]);
+      if (request !== followReadId.current) return;
+      setFollowingProfiles(current => JSON.stringify(current) === JSON.stringify(players) ? current : players);
+      setSocialCounts(current => ({ ...current, ...counts })); setFollowError("");
+    } catch { if (request === followReadId.current) setFollowError("Could not load your follows. Please try again."); }
+    finally { if (request === followReadId.current) setFollowingReady(true); }
+  }, [supabase, userId]);
+  useEffect(() => { setFollowingReady(false); setFollowingProfiles([]); void refreshFollowing(); return () => { followReadId.current++; }; }, [refreshFollowing]);
+
+  const toggleFollow = async (name: string) => {
     if (!user) { note("Log in to follow a player"); openAuth(); return; }
-    const alreadyFollowing = following.includes(demo.username);
-    const request = alreadyFollowing
-      ? supabase.from("follows").delete().eq("follower_id", user.id).eq("following_id", demo.id)
-      : supabase.from("follows").insert({ follower_id: user.id, following_id: demo.id });
-    const { error } = await request;
-    if (error) { note(error.message); return; }
-    setFollowing(old => alreadyFollowing ? old.filter(name => name !== demo.username) : [...old, demo.username]);
-    note(alreadyFollowing ? `Unfollowed @${demo.username}` : `Following @${demo.username}`);
+    if (!followingReady || followBusy.current.has(name)) return;
+    followBusy.current.add(name);
+    setPendingFollows(current => [...current, name]);
+    try {
+      const { data: player, error } = await supabase.from("profiles").select("id,username,display_name,location").eq("username", name).single();
+      if (error || !player) throw new Error("Player could not be found.");
+      const shouldFollow = !followingProfiles.some(current => current.id === player.id);
+      await setPlayerFollow(supabase, user.id, player.id, shouldFollow);
+      setFollowingProfiles(current => shouldFollow ? [...current.filter(item => item.id !== player.id), player] : current.filter(item => item.id !== player.id));
+      notifyFollowChange();
+      note(shouldFollow ? `Following @${name}` : `Unfollowed @${name}`);
+    } catch (error) { note(error instanceof Error ? error.message : "Could not update follow. Please try again."); }
+    finally { followBusy.current.delete(name); setPendingFollows(current => current.filter(item => item !== name)); }
   };
+  const toggleDemoFollow = (player: DemoProfile) => toggleFollow(player.username);
+
+  const loadFollowingPosts = useCallback(async (append = false) => {
+    if (!userId || followingBusy.current) return;
+    followingBusy.current = true;
+    const request = ++followingReadId.current;
+    setFollowingLoading(true); setFollowingError("");
+    try {
+      const result = await getFollowingPosts(supabase, followingProfiles.map(player => player.id), append ? followingCursor.current : null);
+      if (request !== followingReadId.current) return;
+      setFollowingPosts(current => append ? [...current, ...result.posts.filter(post => !current.some(item => item.id === post.id))] : result.posts);
+      followingCursor.current = result.posts.at(-1) || null;
+      setFollowingHasMore(result.hasMore);
+    } catch { if (request === followingReadId.current) setFollowingError("Could not load followed players' videos. Please try again."); }
+    finally { if (request === followingReadId.current) { followingBusy.current = false; setFollowingLoading(false); } }
+  }, [supabase, userId, followingProfiles]);
+  useEffect(() => {
+    followingReadId.current++; followingBusy.current = false; followingCursor.current = null;
+    setFollowingPosts([]); setFollowingError(""); setFollowingHasMore(false); setFollowingLoading(false);
+    if (activeFeed === "following" && followingReady && userId) void loadFollowingPosts();
+    return () => { followingReadId.current++; followingBusy.current = false; };
+  }, [activeFeed, followingReady, loadFollowingPosts, userId]);
+  useSocialRefresh(() => { void refreshFollowing(); if (activeFeed === "following" && followingReady) void loadFollowingPosts(); });
   const toggleLike = (i: number) => setLiked(old => old.includes(i) ? old.filter(x => x !== i) : [...old, i]);
   const toggleLivePostLike = async (postId: string) => {
     if (!user) { note("Log in to like a video"); openAuth(); return; }
@@ -104,33 +179,74 @@ export default function Home() {
     if (error) { note(error.message); return; }
     setCommentDraft(""); setCommentPostId(null); setActionMenu(null); note("Comment posted.");
   };
-  const openAuth = () => { window.location.assign("/login"); };
+  const openAuth = () => { router.push("/login"); };
   const openCreditGift = (username: string) => {
     if (!user) { openAuth(); return; }
     const recipient = demoProfiles.find(profile => profile.username === username);
-    if (!recipient) { window.location.assign(`/u/${username}`); return; }
+    if (!recipient) { router.push(`/u/${username}`); return; }
     setGiftRecipient(recipient);
   };
-  const loadLivePosts = async () => {
-    const { data: postData } = await supabase.from("posts").select("id, author_id, caption, video_path, poster_path, created_at").eq("status", "published").order("created_at", { ascending: false }).limit(120);
-    const posts = (postData || []) as LivePost[];
-    const authorIds = [...new Set(posts.map(post => post.author_id))];
-    if (!authorIds.length) { setLivePosts([]); return; }
-    const { data: authors } = await supabase.from("profiles").select("id, username, display_name, avatar_path").in("id", authorIds);
-    const authorMap = new Map((authors || []).map(author => [author.id, author]));
-    // The newest upload stays first; the rest of the feed changes on each visit.
-    const postsWithAuthors = posts.map(post => ({ ...post, author: authorMap.get(post.author_id) }));
-    setLivePosts(postsWithAuthors.length > 1 ? [postsWithAuthors[0], ...shuffle(postsWithAuthors.slice(1))] : postsWithAuthors);
-  };
+  const loadLivePosts = useCallback(async (append = false) => {
+    if (feedRequest.current || (append && !feedHasMore.current)) return;
+    feedRequest.current = true;
+    setFeedError("");
+    if (append) setLoadingMore(true);
+    try {
+      if (!append || !feedSession.current) feedSession.current = createFeedSession<LivePost>(createFeedPivot());
+      const fields = "id, author_id, caption, video_path, poster_path, created_at, author:profiles!posts_author_id_fkey(username, display_name, avatar_path)";
+      const result = await feedSession.current.next(async () => {
+        const { data, error } = await supabase.from("posts").select(fields).eq("status", "published")
+          .order("created_at", { ascending: false }).order("id", { ascending: false }).limit(3);
+        if (error) throw error;
+        return (data || []) as unknown as LivePost[];
+      }, async ({ pivot, after, wrapped, limit }) => {
+        let request = supabase.from("posts").select(fields).eq("status", "published").order("id", { ascending: true }).limit(limit);
+        request = wrapped ? request.lt("id", pivot) : request.gte("id", pivot);
+        if (after) request = request.gt("id", after);
+        const { data, error } = await request;
+        if (error) throw error;
+        return (data || []) as unknown as LivePost[];
+      });
+      feedHasMore.current = result.hasMore;
+      setHasMore(feedHasMore.current);
+      const ordered = append ? shuffle(result.posts) : result.posts;
+      setLivePosts(current => {
+        const seen = new Set(append ? current.map(post => post.id) : []);
+        return [...(append ? current : []), ...ordered.filter(post => { if (seen.has(post.id)) return false; seen.add(post.id); return true; })];
+      });
+    } catch { setFeedError("Couldn't load your feed. Please try again."); }
+    finally { feedRequest.current = false; setFeedLoading(false); setLoadingMore(false); }
+  }, [supabase]);
+  useEffect(() => {
+    const sentinel = loadMoreRef.current;
+    if (!sentinel || !hasMore || feedLoading || feedError || activeFeed === "following") return;
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) void loadLivePosts(true);
+    }, { rootMargin: "1200px" });
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [livePosts.length, hasMore, feedLoading, feedError, activeFeed, loadLivePosts]);
   const loadDemoProfiles = async () => {
     const { data } = await supabase.from("profiles").select("id, username, display_name, location").like("username", "courtvision%").order("username", { ascending: true }).limit(10);
     setDemoProfiles(shuffle((data || []) as DemoProfile[]));
   };
+  const getVideoDuration = (file: File) => new Promise<number>((resolve, reject) => {
+    const preview = document.createElement("video");
+    const objectUrl = URL.createObjectURL(file);
+    preview.preload = "metadata";
+    preview.onloadedmetadata = () => { URL.revokeObjectURL(objectUrl); resolve(preview.duration); };
+    preview.onerror = () => { URL.revokeObjectURL(objectUrl); reject(new Error("We could not read this video's duration.")); };
+    preview.src = objectUrl;
+  });
   const publishPost = async () => {
     if (!user) { note("Log in to post a video"); openAuth(); return; }
     if (!selectedVideo) { note("Choose a video first"); return; }
     if (!selectedVideo.type.startsWith("video/")) { note("Please choose an MP4, MOV, or WEBM video"); return; }
     if (selectedVideo.size > 524288000) { note("Video must be 500 MB or smaller"); return; }
+    try {
+      const duration = await getVideoDuration(selectedVideo);
+      if (!Number.isFinite(duration) || duration > 60.05) { note("Videos can be up to 1 minute long."); return; }
+    } catch (error) { note(error instanceof Error ? error.message : "We could not read this video's duration."); return; }
     setUploading(true);
     const safeName = selectedVideo.name.replace(/[^a-zA-Z0-9._-]/g, "-");
     const storagePath = `${user.id}/${Date.now()}-${safeName}`;
@@ -154,17 +270,16 @@ export default function Home() {
       setProfileData(created ?? null);
     };
     supabase.auth.getUser().then(({ data }) => { setUser(data.user); void loadProfile(data.user); });
-    const { data: subscription } = supabase.auth.onAuthStateChange((_event, session) => { setUser(session?.user ?? null); void loadProfile(session?.user ?? null); });
+    const { data: subscription } = supabase.auth.onAuthStateChange((_event, session) => { setUser(session?.user ?? null); window.setTimeout(() => { void loadProfile(session?.user ?? null); }, 0); });
     return () => subscription.subscription.unsubscribe();
   }, [supabase]);
   useEffect(() => { setFeedOrder(shuffle(base.map((_, index) => index))); void loadLivePosts(); void loadDemoProfiles(); }, [supabase]);
   useEffect(() => {
-    if (!user || !livePosts.length) { setLikedLivePosts([]); return; }
-    void supabase.from("post_likes").select("post_id").eq("user_id", user.id).in("post_id", livePosts.map(post => post.id)).then(({ data }) => setLikedLivePosts((data || []).map(like => like.post_id)));
-  }, [livePosts, supabase, user]);
+    if (!user || !(activeFeed === "following" ? followingPosts : livePosts).length) { setLikedLivePosts([]); return; }
+    void supabase.from("post_likes").select("post_id").eq("user_id", user.id).in("post_id", (activeFeed === "following" ? followingPosts : livePosts).map(post => post.id)).then(({ data }) => setLikedLivePosts((data || []).map(like => like.post_id)));
+  }, [livePosts, followingPosts, activeFeed, supabase, user]);
   useEffect(() => {
-    const savedTheme = window.localStorage.getItem("wildball-theme");
-    setDarkMode(savedTheme ? savedTheme === "dark" : window.matchMedia("(prefers-color-scheme: dark)").matches);
+    setDarkMode(readTheme() === "dark");
     setThemeReady(true);
   }, []);
   useEffect(() => {
@@ -178,6 +293,7 @@ export default function Home() {
     if (savedLanguage && languages.includes(savedLanguage)) setLanguage(savedLanguage);
   }, []);
   useEffect(() => {
+    if (language === "English (US)") return;
     const initializeTranslator = () => {
       const google = (window as Window & { google?: { translate?: { TranslateElement?: new (settings: object, id: string) => unknown } } }).google;
       if (!google?.translate?.TranslateElement || document.querySelector(".goog-te-gadget")) return;
@@ -192,7 +308,7 @@ export default function Home() {
         document.body.append(script);
       }
     }
-  }, []);
+  }, [language]);
   useEffect(() => {
     const openLanguageDialog = (event: MouseEvent) => {
       const button = (event.target as HTMLElement).closest<HTMLButtonElement>(".more-menu > button:nth-of-type(2)");
@@ -202,48 +318,6 @@ export default function Home() {
     document.addEventListener("click", openLanguageDialog, true);
     return () => document.removeEventListener("click", openLanguageDialog, true);
   }, []);
-  useEffect(() => {
-    const loadFollowedDemoProfiles = async () => {
-      if (!user || !demoProfiles.length) return;
-      const demoById = new Map(demoProfiles.map(demo => [demo.id, demo.username]));
-      const { data } = await supabase.from("follows").select("following_id").eq("follower_id", user.id).in("following_id", [...demoById.keys()]);
-      setFollowing((data || []).map(row => demoById.get(row.following_id)).filter((name): name is string => Boolean(name)));
-    };
-    void loadFollowedDemoProfiles();
-  }, [demoProfiles, supabase, user]);
-  useEffect(() => {
-    const videos = [...feedVideoRefs.current.values()];
-    if (!videos.length) return;
-    if (!("IntersectionObserver" in window)) {
-      void videos[0]?.play().catch(() => undefined);
-      return;
-    }
-    const observer = new IntersectionObserver((entries) => {
-      entries.forEach((entry) => {
-        const video = entry.target as HTMLVideoElement;
-        if (entry.isIntersecting) void video.play().catch(() => undefined);
-        else video.pause();
-      });
-    }, { threshold: 0.6 });
-    videos.forEach(video => observer.observe(video));
-    return () => observer.disconnect();
-  }, [activeFeed, livePosts]);
-  useEffect(() => {
-    const feed = document.getElementById("feed");
-    if (!feed) return;
-    const clearAds = () => feed.querySelectorAll(".auto-feed-ad").forEach(ad => ad.remove());
-    clearAds();
-    if (activeFeed === "following") return clearAds;
-    [...feed.querySelectorAll<HTMLElement>(".post-latest")].forEach((post, index) => {
-      if ((index + 1) % 2) return;
-      const ad = document.createElement("article");
-      ad.className = "ad auto-feed-ad";
-      ad.innerHTML = "<div><small>SPONSORED · HARDWOOD HUSTLE</small><h1>Made for the last run.</h1><p>For the ones who stay late.</p></div><b>●</b><button type=\"button\">Shop ↗</button>";
-      ad.querySelector("button")?.addEventListener("click", () => note("Shop link opened"));
-      post.after(ad);
-    });
-    return clearAds;
-  }, [activeFeed, livePosts]);
   const submitAuth = async (_email: string, _password: string, _username: string): Promise<string> => {
     window.location.assign(auth === "signup" ? "/login?mode=signup" : "/login");
     return "Continue on the secure sign-in page.";
@@ -264,38 +338,39 @@ export default function Home() {
     document.cookie = `googtrans=/en/${code};path=/;max-age=31536000;SameSite=Lax`;
     window.location.reload();
   };
-  const orderedBase = feedOrder.map(videoIndex => ({ post: base[videoIndex], videoIndex }));
-  const posts = activeFeed === "following"
-    ? Array.from({ length: 12 }, (_, i) => ({ ...orderedBase[i % orderedBase.length], index: i })).filter(({ post }) => following.includes(post[0]))
-    : activeFeed === "explore"
-      ? []
-      : [];
+  const visibleLivePosts = activeFeed === "following" ? followingPosts : livePosts;
+  // Demo clips are never used as substitutes for a signed-in Following feed.
+  const posts: { post: string[]; videoIndex: number; index: number }[] = [];
 
   return <>{user && <style>{".mobile-auth{display:none!important}"}</style>}{actionMenu === "comment" && <div className="modal-backdrop" onClick={() => { setActionMenu(null); setCommentPostId(null); }}><div className="post-action-panel" onClick={event => event.stopPropagation()}><button className="close" onClick={() => { setActionMenu(null); setCommentPostId(null); }} aria-label="Close">×</button><p>ADD A COMMENT</p><h2>Join the conversation</h2><textarea autoFocus value={commentDraft} onChange={event => setCommentDraft(event.target.value)} maxLength={500} placeholder="Write something positive..."></textarea><button className="publish" onClick={submitComment}>Post comment</button></div></div>}{actionMenu === "more" && <div className="modal-backdrop" onClick={() => setActionMenu(null)}><div className="post-action-panel post-more-panel" onClick={event => event.stopPropagation()}><button className="close" onClick={() => setActionMenu(null)} aria-label="Close">×</button><p>POST OPTIONS</p><h2>What would you like to do?</h2><button onClick={() => { setActionMenu(null); note("Post saved to your collection."); }}>Save post</button><button onClick={() => { setActionMenu(null); note("Not interested — we will show fewer posts like this."); }}>Not interested</button><button className="report-action" onClick={() => { setActionMenu(null); note("Report received. Thanks for helping keep Wildball safe."); }}>Report post</button></div></div>}
-    <div className={`shell${darkMode ? " dark-mode" : ""}`} onClickCapture={(event) => { const action = (event.target as HTMLElement).closest(".actions button"); if (!action) return; if (action.classList.contains("creator-action")) { const badge = (event.target as HTMLElement).closest("i"); if (!badge) { event.preventDefault(); event.stopPropagation(); const username = action.closest(".post")?.querySelector(".creator b")?.textContent; if (username) window.location.assign(`/u/${username}`); } return; } if (action.classList.contains("comment")) { event.preventDefault(); event.stopPropagation(); const source = action.closest(".post")?.querySelector("source")?.getAttribute("src"); setCommentPostId(livePosts.find(post => post.video_path === source)?.id || null); setActionMenu("comment"); } if (action.classList.contains("more-action")) { event.preventDefault(); event.stopPropagation(); setActionMenu("more"); } }}>
+    <div className={`shell${darkMode ? " dark-mode" : ""}`} onClickCapture={(event) => { const action = (event.target as HTMLElement).closest(".actions button"); if (!action) return; if (action.classList.contains("creator-action")) { const badge = (event.target as HTMLElement).closest("i"); if (!badge) { event.preventDefault(); event.stopPropagation(); const username = action.closest(".post")?.querySelector(".creator b")?.textContent; if (username) router.push(`/u/${username}`); } return; } if (action.classList.contains("comment")) { event.preventDefault(); event.stopPropagation(); setCommentPostId(action.closest(".post")?.getAttribute("data-post-id") || null); setActionMenu("comment"); } if (action.classList.contains("more-action")) { event.preventDefault(); event.stopPropagation(); setActionMenu("more"); } }}>
       <aside>
         {languageDialog && <LanguageDialog value={language} onSave={saveLanguage} onClose={() => setLanguageDialog(false)} />}
         <a className="logo" href="#feed"><Icon name="ball" className="icon-brand"/><span>WILDBALL<small>MEDIA</small></span></a>
-        <nav><button className={activeFeed === "for-you" ? "selected" : ""} onClick={() => selectFeed("for-you")}><Icon name="home"/>For you</button><button className={activeFeed === "following" ? "selected" : ""} onClick={() => selectFeed("following")}><Icon name="people"/>Following</button><button className={activeFeed === "explore" ? "selected" : ""} onClick={() => selectFeed("explore")}><Icon name="search"/>Explore</button><button onClick={() => note("Live games are coming soon")}><Icon name="live"/>Live <i>3</i></button><button onClick={() => user ? window.location.assign("/inbox") : openAuth()}><Icon name="inbox"/>Inbox</button></nav>
-        <div className="account-area"><button className="account" onClick={() => window.location.assign("/profile")}><span>{(profileData?.display_name || profileData?.username || user?.email || "M")[0].toUpperCase()}</span><strong>{profileData?.display_name || profileData?.username || "Your profile"}<small>{profileData ? `@${profileData.username}` : "Sign in to continue"}</small></strong></button>{user && <button className="sidebar-more" aria-label="Open more options" aria-expanded={moreMenu} onClick={() => setMoreMenu(open => !open)}><Icon name="more"/></button>}
-          {user && moreMenu && <section className="more-menu" aria-label="More options"><div className="more-menu-head"><div><small>WILDBALL</small><h2>More</h2></div><button aria-label="Close more options" onClick={() => setMoreMenu(false)}>×</button></div><p>Settings</p><button onClick={() => window.location.assign("/settings")}><Icon name="settings"/>General</button><button onClick={() => note("Language settings will be available soon")}><Icon name="language"/>English (US)<b>›</b></button><div className="theme-row"><span><Icon name="moon"/>Dark mode</span><button className={darkMode ? "theme-switch on" : "theme-switch"} aria-label="Toggle dark mode" onClick={() => { setDarkMode(value => !value); note(darkMode ? "Light mode selected" : "Dark mode selected"); }}><i></i></button></div><hr/><p>Tools</p><button onClick={() => note("Wildball Studio is coming soon")}><Icon name="studio"/>Wildball Studio<i>•</i></button><button onClick={() => note("Creator effects are coming soon")}><Icon name="effects"/>Create effects</button><button onClick={() => note("Live tools are coming soon")}><Icon name="live"/>LIVE tools<b>›</b></button><button onClick={() => note("Credits are coming soon")}><Icon name="coins"/>Get Credits</button><button onClick={() => note("Wildball Shop is coming soon")}><Icon name="shop"/>Wildball Shop</button><hr/><p>Other</p><button onClick={() => note("Help Center is coming soon")}><Icon name="help"/>Help Center</button><button className="menu-logout" onClick={async () => { await supabase.auth.signOut(); setMoreMenu(false); note("Logged out"); }}><Icon name="logout"/>Log out</button></section>}
+        <nav><button className={activeFeed === "for-you" ? "selected" : ""} onClick={() => selectFeed("for-you")}><Icon name="home"/>For you</button><button className={activeFeed === "following" ? "selected" : ""} onClick={() => selectFeed("following")}><Icon name="people"/>Following</button><button className={activeFeed === "explore" ? "selected" : ""} onClick={() => selectFeed("explore")}><Icon name="search"/>Explore</button><button onClick={() => note("Live games are coming soon")}><Icon name="live"/>Live <i>3</i></button><button onClick={() => user ? router.push("/inbox") : openAuth()}><Icon name="inbox"/>Inbox</button></nav>
+        <div className="account-area"><button className="account" onClick={() => router.push("/profile")}><span>{(profileData?.display_name || profileData?.username || user?.email || "M")[0].toUpperCase()}</span><strong>{profileData?.display_name || profileData?.username || "Your profile"}<small>{profileData ? `@${profileData.username}` : "Sign in to continue"}</small></strong></button>{user && <button className="sidebar-more" aria-label="Open more options" aria-expanded={moreMenu} onClick={() => setMoreMenu(open => !open)}><Icon name="more"/></button>}
+          {user && moreMenu && <section className="more-menu" aria-label="More options"><div className="more-menu-head"><div><small>WILDBALL</small><h2>More</h2></div><button aria-label="Close more options" onClick={() => setMoreMenu(false)}>×</button></div><p>Settings</p><button onClick={() => router.push("/settings")}><Icon name="settings"/>General</button><button onClick={() => note("Language settings will be available soon")}><Icon name="language"/>English (US)<b>›</b></button><div className="theme-row"><span><Icon name="moon"/>Dark mode</span><button className={darkMode ? "theme-switch on" : "theme-switch"} aria-label="Toggle dark mode" onClick={() => { setDarkMode(value => !value); note(darkMode ? "Light mode selected" : "Dark mode selected"); }}><i></i></button></div><hr/><p>Tools</p><button onClick={() => note("Wildball Studio is coming soon")}><Icon name="studio"/>Wildball Studio<i>•</i></button><button onClick={() => note("Creator effects are coming soon")}><Icon name="effects"/>Create effects</button><button onClick={() => note("Live tools are coming soon")}><Icon name="live"/>LIVE tools<b>›</b></button><button onClick={() => note("Credits are coming soon")}><Icon name="coins"/>Get Credits</button><button onClick={() => note("Wildball Shop is coming soon")}><Icon name="shop"/>Wildball Shop</button><hr/><p>Other</p><button onClick={() => note("Help Center is coming soon")}><Icon name="help"/>Help Center</button><button className="menu-logout" onClick={async () => { await supabase.auth.signOut(); setMoreMenu(false); note("Logged out"); }}><Icon name="logout"/>Log out</button></section>}
         </div><button className="create" onClick={() => setComposer(true)}><Icon name="plus"/>Create a post</button>
         <p className="label">YOUR LEAGUES</p><div className="leagues">{["NBA", "WNBA", "College"].map(x => <button key={x} onClick={() => note(`${x} league selected`)}><b></b>{x}</button>)}</div><button className="login" onClick={user ? async () => { await supabase.auth.signOut(); note("Logged out"); } : openAuth}>{user ? "Log out" : "Log in"}</button>
       </aside>
       <main>
-        <header><a className="mobile-logo" aria-label="Wildball home">W<span>•</span>B</a><div className="tabs"><button className={activeFeed === "for-you" ? "selected" : ""} onClick={() => selectFeed("for-you")}>FOR YOU</button><button className={activeFeed === "following" ? "selected" : ""} onClick={() => selectFeed("following")}>FOLLOWING</button></div><button className="search" aria-label="Search users" onClick={() => window.location.assign("/search")}><Icon name="search"/></button><button className="mobile-auth" onClick={openAuth}>Log in</button></header>
-        <section className="stories"><button className="story" onClick={() => setComposer(true)}><span>+</span>Your story</button>{[1,2,3,4,5].map(n => { const username = `courtvision${String(n).padStart(2, "0")}`; return <button className="story" key={username} onClick={() => window.location.assign(`/u/${username}`)}><img src={`/assets/avatars/${username}.png`} alt={`${username}'s profile`}/>{username}</button>; })}</section>
-        <section id="feed" onClick={(event) => { const target = event.target as HTMLElement; if (target.closest(".follow, .creator-action")) return; if (!target.closest(".creator")) return; const username = target.closest(".post")?.querySelector(".creator b")?.textContent; if (username) window.location.assign(`/u/${username}`); }}>{activeFeed !== "following" && livePosts.map((post, position) => { const i = 1000 + position, username = post.author?.username || "wildball", avatar = post.author?.avatar_path || "/assets/avatars/courtvision01.png", isLiked = likedLivePosts.includes(post.id), isFollowing = following.includes(username); return <article className="post post-latest photo" key={post.id}><div className="art"><i></i><b>●</b></div><video ref={element => { if (element) feedVideoRefs.current.set(i, element); else feedVideoRefs.current.delete(i); }} className="hero" loop muted playsInline preload="metadata" poster={post.poster_path || undefined} aria-label="Latest basketball video"><source src={post.video_path} type="video/mp4"/></video><div className="veil"></div><small className="tag"><span></span>LATEST UPLOAD</small><button className="sound" aria-label="Toggle sound" onClick={() => note("Clips play muted for now")}><Icon name="volume"/></button><div className="copy"><div className="creator"><img src={avatar} alt={username}/><span><b>{username}</b><small>{new Date(post.created_at).toLocaleDateString()}</small></span><button className={`follow ${isFollowing ? "on" : ""}`} onClick={() => toggleFollow(username)}>{isFollowing ? "Following" : "Follow"}</button></div><h1>{post.caption || "NEW ON WILDBALL"} <em><Icon name="ball"/></em></h1><p>Fresh from <b>@{username}</b></p><button className="audio" onClick={() => note("Original sound selected")}><Icon name="volume"/>original sound · {username}</button></div><div className="actions"><button className="creator-action" aria-label={`Follow ${username}`} onClick={() => toggleFollow(username)}><img src={avatar} alt=""/><i><Icon name="plus"/></i></button><button className="credit-action" aria-label={`Send credits to ${username}`} onClick={() => openCreditGift(username)}><strong><Icon name="coins"/></strong><small>Credits</small></button><button className={`like ${isLiked ? "liked" : ""}`} aria-label="Like post" onClick={() => void toggleLivePostLike(post.id)}><strong><Icon name="heart"/></strong><small>Like</small></button><button className="comment" aria-label="Comment" onClick={() => { setCommentPostId(post.id); setActionMenu("comment"); }}><strong><Icon name="comment"/></strong><small>Comment</small></button><button className="share" aria-label="Share post" onClick={() => { navigator.clipboard?.writeText(`${location.origin}/?post=${post.id}`); note("Link copied — ready to share"); }}><strong><Icon name="share"/></strong><small>Share</small></button><button className="more-action" aria-label="More options" onClick={() => setActionMenu("more")}><strong><Icon name="more"/></strong></button></div><div className="progress"><span></span></div></article>; })}{activeFeed === "following" && posts.length === 0 && <div className="empty-feed"><Icon name="people"/><h1>Build your court.</h1><p>Follow hoopers from the right rail to see their clips here.</p><button onClick={() => selectFeed("explore")}>Explore players</button></div>}{activeFeed === "explore" && <div className="feed-heading"><small>DISCOVER THE COURT</small><h1>Explore</h1><p>Fresh clips and conversations from the Wildball community.</p></div>}{posts.map(({ post: p, videoIndex, index: i }) => { const isLiked = liked.includes(i), isFollowing = following.includes(p[0]); return <div key={i}>
-          <article className={`post post-${videoIndex % 5} photo`}><div className="art"><i></i><b>●</b></div><video ref={element => { if (element) feedVideoRefs.current.set(i, element); else feedVideoRefs.current.delete(i); }} className="hero" loop muted playsInline preload="none" poster={`/assets/wildball-${covers[videoIndex % covers.length]}.png`} aria-label="Basketball action video"><source src={`/videos/${clips[videoIndex % clips.length]}.mp4`} type="video/mp4"/></video><div className="veil"></div><small className="tag"><span></span>{p[6]}</small><button className="sound" aria-label="Toggle sound" onClick={() => note("Clips play muted for now")}><Icon name="volume"/></button>
+        {activeFeed !== "following" && feedLoading && <LoadingState label="Finding fresh clips for you"/>}
+        {activeFeed !== "following" && feedError && <p className="empty-real" role="alert">{feedError} <button onClick={() => { if (!livePosts.length) setFeedLoading(true); void loadLivePosts(livePosts.length > 0); }}>Try again</button></p>}
+        <header><a className="mobile-logo" aria-label="Wildball home">W<span>•</span>B</a><div className="tabs"><button className={activeFeed === "for-you" ? "selected" : ""} onClick={() => selectFeed("for-you")}>FOR YOU</button><button className={activeFeed === "following" ? "selected" : ""} onClick={() => selectFeed("following")}>FOLLOWING</button></div><button className="search" aria-label="Search users" onClick={() => router.push("/search")}><Icon name="search"/></button><button className="mobile-auth" onClick={openAuth}>Log in</button></header>
+        <section className="stories"><button className="story" onClick={() => setComposer(true)}><span>+</span>Your story</button>{[1,2,3,4,5].map(n => { const username = `courtvision${String(n).padStart(2, "0")}`; return <button className="story" key={username} onClick={() => router.push(`/u/${username}`)}><img src={`/assets/avatars/${username}.png`} alt={`${username}'s profile`}/>{username}</button>; })}</section>
+        <section id="feed" onClick={(event) => { const target = event.target as HTMLElement; if (target.closest(".follow, .creator-action")) return; if (!target.closest(".creator")) return; const username = target.closest(".post")?.querySelector(".creator b")?.textContent; if (username) router.push(`/u/${username}`); }}>{visibleLivePosts.map((post, position) => { const i = 1000 + position, username = post.author?.username || "wildball", avatar = post.author?.avatar_path || "/assets/avatars/courtvision01.png", isLiked = likedLivePosts.includes(post.id), isFollowing = following.includes(username); return <Fragment key={post.id}><article className="post post-latest photo" data-post-id={post.id}><div className="art"><i></i><b>●</b></div><FeedVideo muted={feedMuted} src={post.video_path} poster={post.poster_path || undefined}/><div className="veil"></div><small className="tag"><span></span>LATEST UPLOAD</small><FeedSoundButton muted={feedMuted} onToggle={toggleFeedSound}><Icon name="volume"/></FeedSoundButton><div className="copy"><div className="creator"><img src={avatar} alt={username}/><span><b>{username}</b><small>{new Date(post.created_at).toLocaleDateString()}</small></span><button className={`follow ${isFollowing ? "on" : ""}`} disabled={!followingReady || pendingFollows.includes(username) || post.author_id === userId} onClick={() => void toggleFollow(username)}>{isFollowing ? "Following" : "Follow"}</button></div><h1>{post.caption || "NEW ON WILDBALL"} <em><Icon name="ball"/></em></h1><p>Fresh from <b>@{username}</b></p><button className="audio" onClick={() => note("Original sound selected")}><Icon name="volume"/>original sound · {username}</button></div><div className="actions"><button className="creator-action" aria-label={`${isFollowing ? "Unfollow" : "Follow"} ${username}`} aria-pressed={isFollowing} disabled={!followingReady || pendingFollows.includes(username) || post.author_id === userId} onClick={() => void toggleFollow(username)}><img src={avatar} alt=""/><i><Icon name={isFollowing ? "check" : "plus"}/></i></button><button className="credit-action" aria-label={`Send credits to ${username}`} onClick={() => openCreditGift(username)}><strong><Icon name="coins"/></strong><small>Credits</small></button><button className={`like ${isLiked ? "liked" : ""}`} aria-label="Like post" onClick={() => void toggleLivePostLike(post.id)}><strong><Icon name="heart"/></strong><small>Like</small></button><button className="comment" aria-label="Comment" onClick={() => { setCommentPostId(post.id); setActionMenu("comment"); }}><strong><Icon name="comment"/></strong><small>Comment</small></button><button className="share" aria-label="Share post" onClick={() => { navigator.clipboard?.writeText(`${location.origin}/?post=${post.id}`); note("Link copied — ready to share"); }}><strong><Icon name="share"/></strong><small>Share</small></button><button className="more-action" aria-label="More options" onClick={() => setActionMenu("more")}><strong><Icon name="more"/></strong></button></div><div className="progress"><span></span></div></article>{activeFeed !== "following" && (position + 1) % 2 === 0 && <article className="ad auto-feed-ad"><div><small>SPONSORED · HARDWOOD HUSTLE</small><h1>Made for the last run.</h1><p>For the ones who stay late.</p></div><b>●</b><button type="button" onClick={() => note("Sponsor offers are coming soon")}>Learn more ↗</button></article>}</Fragment>; })}{activeFeed === "following" && <FollowingFeedStatus signedIn={!!user} loading={!followingReady || followingLoading} error={followError || followingError} empty={!followingPosts.length} followsCount={followingProfiles.length} onRetry={() => { void refreshFollowing(); void loadFollowingPosts(); }} onLogin={openAuth} onExplore={() => router.push("/search")}/>}{activeFeed === "explore" && <div className="feed-heading"><small>DISCOVER THE COURT</small><h1>Explore</h1><p>Fresh clips and conversations from the Wildball community.</p></div>}{posts.map(({ post: p, videoIndex, index: i }) => { const isLiked = liked.includes(i), isFollowing = following.includes(p[0]); return <div key={i}>
+          <article className={`post post-${videoIndex % 5} photo`}><div className="art"><i></i><b>●</b></div><video ref={element => { if (element) feedVideoRefs.current.set(i, element); else feedVideoRefs.current.delete(i); }} className="hero" loop muted={feedMuted} playsInline preload="none" poster={`/assets/wildball-${covers[videoIndex % covers.length]}.png`} aria-label="Basketball action video"><source src={`/videos/${clips[videoIndex % clips.length]}.mp4`} type="video/mp4"/></video><div className="veil"></div><small className="tag"><span></span>{p[6]}</small><FeedSoundButton muted={feedMuted} onToggle={toggleFeedSound}><Icon name="volume"/></FeedSoundButton>
             <div className="copy"><div className="creator"><img src={`/assets/avatars/${p[0]}.png`} alt={p[0]}/><span><b>{p[0]}</b><small>{p[1]}</small></span><button className={`follow ${isFollowing ? "on" : ""}`} onClick={() => toggleFollow(p[0])}>{isFollowing ? "Following" : "Follow"}</button></div><h1>{p[3]} <em><Icon name="ball"/></em></h1><p>{p[4]} <b>{p[5]}</b></p><button className="audio" onClick={() => note("Original sound selected")}><Icon name="volume"/>original sound · {p[0]}</button></div>
             <div className="actions"><button className="creator-action" aria-label={`Follow ${p[0]}`} onClick={() => toggleFollow(p[0])}><img src={`/assets/avatars/${p[0]}.png`} alt=""/><i><Icon name="plus"/></i></button><button className="credit-action" aria-label={`Send credits to ${p[0]}`} onClick={() => openCreditGift(p[0])}><strong><Icon name="coins"/></strong><small>Credits</small></button><button className={`like ${isLiked ? "liked" : ""}`} aria-label="Like post" onClick={() => toggleLike(i)}><strong><Icon name="heart"/></strong><small>{8 + i * 3}.{i % 9}K</small></button><button className="comment" aria-label="Comment" onClick={() => setComposer(true)}><strong><Icon name="comment"/></strong><small>{117 + i * 83}</small></button><button className="share" aria-label="Share post" onClick={() => { navigator.clipboard?.writeText(location.href); note("Link copied — ready to share"); }}><strong><Icon name="share"/></strong><small>Share</small></button><button className="more-action" aria-label="More options" onClick={() => note("More options opened")}><strong><Icon name="more"/></strong></button></div><div className="progress"><span></span></div>
           </article>{activeFeed !== "following" && (i === 1 || i === 4) && <article className="ad"><div><small>SPONSORED · HARDWOOD HUSTLE</small><h1>Made for the last run.</h1><p>For the ones who stay late.</p></div><b>●</b><button onClick={() => note("Shop link opened")}>Shop ↗</button></article>}</div>; })}</section>
+        {activeFeed !== "following" && <div className="feed-pagination" ref={loadMoreRef}>{feedError ? <button onClick={() => void loadLivePosts(livePosts.length > 0)}>Try again</button> : loadingMore ? <LoadingState label="Finding more clips" compact/> : hasMore && !feedLoading ? <button onClick={() => void loadLivePosts(true)}>Load more clips</button> : !hasMore && livePosts.length > 0 ? <small>You’re all caught up.</small> : null}</div>}
+        {activeFeed === "following" && user && followingPosts.length > 0 && <div className="feed-pagination">{followingLoading ? <LoadingState label="Loading more videos" compact/> : followingHasMore ? <button onClick={() => void loadFollowingPosts(true)}>Load more videos</button> : <small>You are all caught up.</small>}</div>}
       </main>
-      <aside className="right"><div className="online"><span></span>12,843 hoopers online</div><section><h2>Trending now <button onClick={() => note("All trends opened")}>See all</button></h2>{["# WNBAPlayoffs", "# InMyBag", "# DunkOfTheDay"].map((x, i) => <button className="trend" key={x} onClick={() => note(`${x} selected`)}><b>{x}</b><small>{["48.2K", "32.1K", "18.7K"][i]} posts ↗</small></button>)}</section><section><h2>Players to follow <button onClick={() => note("Suggestions opened")}>See all</button></h2>{demoProfiles.length ? demoProfiles.map(demo => <div className="person" key={demo.id} role="link" tabIndex={0} onClick={() => window.location.assign(`/u/${demo.username}`)} onKeyDown={event => { if (event.key === "Enter") window.location.assign(`/u/${demo.username}`); }}><img src={`/assets/avatars/${demo.username}.png`} alt={demo.username}/><span><b>{demo.username}</b><small>{demo.location || "Wildball demo hooper"}</small></span><button className={`follow ${following.includes(demo.username) ? "on" : ""}`} onClick={event => { event.stopPropagation(); void toggleDemoFollow(demo); }}>{following.includes(demo.username) ? "Following" : "Follow"}</button></div>) : <p className="empty-real">Loading demo hoopers…</p>}</section><footer>About · Newsroom · Careers · Help<br/>Community Guidelines · Privacy<br/><br/>© 2026 WILDBALL MEDIA</footer></aside>
+      <aside className="right"><div className="online"><span></span>12,843 hoopers online</div><section><h2>Trending now <button onClick={() => note("All trends opened")}>See all</button></h2>{["# WNBAPlayoffs", "# InMyBag", "# DunkOfTheDay"].map((x, i) => <button className="trend" key={x} onClick={() => note(`${x} selected`)}><b>{x}</b><small>{["48.2K", "32.1K", "18.7K"][i]} posts ↗</small></button>)}</section><section><h2>Players to follow <button onClick={() => note("Suggestions opened")}>See all</button></h2>{demoProfiles.length ? demoProfiles.map(demo => <div className="person" key={demo.id} role="link" tabIndex={0} onClick={() => router.push(`/u/${demo.username}`)} onKeyDown={event => { if (event.key === "Enter") router.push(`/u/${demo.username}`); }}><img src={`/assets/avatars/${demo.username}.png`} alt={demo.username}/><span><b>{demo.username}</b><small>{demo.location || "Wildball demo hooper"}</small></span><button className={`follow ${following.includes(demo.username) ? "on" : ""}`} disabled={!followingReady || pendingFollows.includes(demo.username) || demo.id === userId} onClick={event => { event.stopPropagation(); void toggleDemoFollow(demo); }}>{following.includes(demo.username) ? "Following" : "Follow"}</button></div>) : <p className="empty-real">Loading demo hoopers…</p>}</section><footer>About · Newsroom · Careers · Help<br/>Community Guidelines · Privacy<br/><br/>© 2026 WILDBALL MEDIA</footer></aside>
     </div>
-    <nav className="bottom"><button aria-label="Home" onClick={() => selectFeed("for-you")}><Icon name="home"/><small>Home</small></button><button aria-label="Search players" onClick={() => window.location.assign("/search")}><Icon name="search"/><small>Search</small></button><button className="add" aria-label="Create post" onClick={() => setComposer(true)}><Icon name="plus"/></button><button aria-label="Inbox" onClick={() => user ? window.location.assign("/inbox") : openAuth()}><Icon name="inbox"/><small>Inbox</small></button><button aria-label="Profile" onClick={() => user ? window.location.assign("/profile") : openAuth()}><Icon name="profile"/><small>Profile</small></button></nav>
+    <nav className="bottom"><button aria-label="Home" onClick={() => selectFeed("for-you")}><Icon name="home"/><small>Home</small></button><button aria-label="Search players" onClick={() => router.push("/search")}><Icon name="search"/><small>Search</small></button><button className="add" aria-label="Create post" onClick={() => setComposer(true)}><Icon name="plus"/></button><button aria-label="Inbox" onClick={() => user ? router.push("/inbox") : openAuth()}><Icon name="inbox"/><small>Inbox</small></button><button aria-label="Profile" onClick={() => user ? router.push("/profile") : openAuth()}><Icon name="profile"/><small>Profile</small></button></nav>
     {giftRecipient && <CreditGiftDialog recipientId={giftRecipient.id} recipientName={giftRecipient.display_name || giftRecipient.username} onClose={() => setGiftRecipient(null)}/>} {composer && <div className="modal-backdrop"><div className="composer"><button className="close" onClick={() => setComposer(false)} aria-label="Close">×</button><p>CREATE A WILDBALL</p><h1>What&apos;s good on the court?</h1><label><Icon name="plus"/><span><b>{selectedVideo ? selectedVideo.name : "Choose a clip"}</b><small>MP4, MOV or WEBM · up to 500 MB</small></span><input type="file" accept="video/mp4,video/webm,video/quicktime" hidden onChange={event => setSelectedVideo(event.target.files?.[0] || null)}/></label><textarea value={postCaption} onChange={event => setPostCaption(event.target.value)} maxLength={2200} placeholder="Tell the story..."></textarea><div><button type="button" onClick={() => note("Sound tools are coming soon")}>Add sound</button><button type="button" onClick={() => note("Tagging is coming soon")}>@ Tag people</button></div><button className="publish" disabled={uploading} onClick={publishPost}>{uploading ? "Uploading…" : "Post to Wildball →"}</button></div></div>}
-    {profile && <div id="profile-view" className="open" onClick={e => e.currentTarget === e.target && setProfile(false)}><div className="profile-sheet"><button className="profile-close" onClick={() => setProfile(false)} aria-label="Close profile">×</button><div className="profile-head"><div className="profile-avatar">{(profileData?.display_name || profileData?.username || "M")[0].toUpperCase()}</div><div><h1>{profileData?.display_name || profileData?.username || "mika.runs"} {user && <span>✓</span>}</h1><p>{profileData ? `@${profileData.username} · ${profileData.location || "Add your location"}` : "Sign in to view your profile"}</p><button className="edit-profile" onClick={() => { if (!user) return openAuth(); setProfileDraft({ display_name: profileData?.display_name || "", bio: profileData?.bio || "", location: profileData?.location || "" }); setEditingProfile(true); }}>{user ? "Edit profile" : "Log in / Sign up"}</button></div></div>{editingProfile ? <div className="profile-editor"><label>Name<input value={profileDraft.display_name} onChange={e => setProfileDraft(d => ({ ...d, display_name: e.target.value }))}/></label><label>Location<input value={profileDraft.location} onChange={e => setProfileDraft(d => ({ ...d, location: e.target.value }))}/></label><label>Bio<textarea value={profileDraft.bio} onChange={e => setProfileDraft(d => ({ ...d, bio: e.target.value }))}/></label><button onClick={saveProfile}>Save profile</button><button className="cancel" onClick={() => setEditingProfile(false)}>Cancel</button></div> : <><p className="bio">{profileData?.bio || "Basketball, stories & the culture around the court."}<br/><b>#WildballCreator</b></p><div className="profile-stats">{[["128","Following"],["14.8K","Followers"],["392K","Likes"]].map(([a,b]) => <button key={b}><strong>{a}</strong><small>{b}</small></button>)}</div><div className="profile-tabs"><button className="active">Posts</button><button>Liked</button></div><div className="profile-grid">{Array.from({length:9}, (_,i) => <button key={i} onClick={() => note("Opening your post")}><img src={`/assets/wildball-${covers[i % 4]}.png`} alt="Uploaded basketball clip"/><span>▶ <b>{12 + i * 3}.{i}K</b></span></button>)}</div></>}</div></div>}
+    {profile && <div id="profile-view" className="open" onClick={e => e.currentTarget === e.target && setProfile(false)}><div className="profile-sheet"><button className="profile-close" onClick={() => setProfile(false)} aria-label="Close profile">×</button><div className="profile-head"><div className="profile-avatar">{(profileData?.display_name || profileData?.username || "M")[0].toUpperCase()}</div><div><h1>{profileData?.display_name || profileData?.username || "mika.runs"} {user && <span>✓</span>}</h1><p>{profileData ? `@${profileData.username} · ${profileData.location || "Add your location"}` : "Sign in to view your profile"}</p><button className="edit-profile" onClick={() => { if (!user) return openAuth(); setProfileDraft({ display_name: profileData?.display_name || "", bio: profileData?.bio || "", location: profileData?.location || "" }); setEditingProfile(true); }}>{user ? "Edit profile" : "Log in / Sign up"}</button></div></div>{editingProfile ? <div className="profile-editor"><label>Name<input value={profileDraft.display_name} onChange={e => setProfileDraft(d => ({ ...d, display_name: e.target.value }))}/></label><label>Location<input value={profileDraft.location} onChange={e => setProfileDraft(d => ({ ...d, location: e.target.value }))}/></label><label>Bio<textarea value={profileDraft.bio} onChange={e => setProfileDraft(d => ({ ...d, bio: e.target.value }))}/></label><button onClick={saveProfile}>Save profile</button><button className="cancel" onClick={() => setEditingProfile(false)}>Cancel</button></div> : <><p className="bio">{profileData?.bio || "Basketball, stories & the culture around the court."}<br/><b>#WildballCreator</b></p><div className="profile-stats">{[[socialCounts.following,"Following"],[socialCounts.followers,"Followers"],[socialCounts.likes,"Likes"]].map(([a,b]) => <button key={b}><strong>{a}</strong><small>{b}</small></button>)}</div><div className="profile-tabs"><button className="active">Posts</button><button>Liked</button></div><div className="profile-grid">{Array.from({length:9}, (_,i) => <button key={i} onClick={() => note("Opening your post")}><img src={`/assets/wildball-${covers[i % 4]}.png`} alt="Uploaded basketball clip"/><span>▶ <b>{12 + i * 3}.{i}K</b></span></button>)}</div></>}</div></div>}
     {auth && <div id="auth-view" className={`open ${auth === "signup" ? "signup" : ""}`}><div className="auth-card"><button className="auth-close" onClick={() => setAuth(null)} aria-label="Close">×</button><div className="auth-brand"><Icon name="ball" className="icon-brand"/> WILDBALL <small>MEDIA</small></div><div className="auth-copy"><p>WELCOME TO THE COURT</p><h1>Basketball<br/>lives here.</h1><span>Watch, post and share the game with your people.</span></div><AuthForm signup={auth === "signup"} switchMode={() => setAuth(auth === "signup" ? "login" : "signup")} submit={async (email, password, username) => { const message = await submitAuth(email, password, username); note(message); if (message.startsWith("Account created") || message.startsWith("Welcome back")) setAuth(null); return message; }}/></div></div>}
     <div id="toast" className={toast ? "show" : ""}>{toast}</div>
   </>;

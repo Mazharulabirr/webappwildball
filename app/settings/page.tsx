@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "../../lib/supabase/client";
+import { readTheme } from "../../lib/theme";
 
 const supabase = createClient();
 const sections = ["Manage account", "Wallet & credits", "Appearance", "Privacy", "Notifications", "Content preferences", "Screen time", "Accessibility"];
@@ -26,7 +27,7 @@ export default function SettingsPage() {
   const note = (text: string) => { setNotice(text); window.setTimeout(() => setNotice(""), 2600); };
 
   useEffect(() => {
-    setTheme(document.documentElement.classList.contains("dark-mode") ? "dark" : "light");
+    setTheme(readTheme());
     const load = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { router.replace("/login"); return; }

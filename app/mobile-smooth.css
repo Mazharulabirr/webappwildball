@@ -1,6 +1,6 @@
 @media(max-width:900px){
-  html{scroll-behavior:auto;-webkit-text-size-adjust:100%;overscroll-behavior-y:none}
-  body{min-height:100%;overflow-x:hidden;overscroll-behavior-y:none;-webkit-font-smoothing:antialiased;text-rendering:optimizeSpeed}
+  html{scroll-behavior:auto;-webkit-text-size-adjust:100%;overscroll-behavior-y:auto}
+  body{min-height:100%;overflow-x:hidden;overscroll-behavior-y:auto;-webkit-font-smoothing:antialiased;text-rendering:optimizeSpeed}
   body,main,.shell,.real-profile,.settings-page,.player-search{touch-action:pan-y pinch-zoom}
   button,a,input,select,textarea{touch-action:manipulation}
 

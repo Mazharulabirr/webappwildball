@@ -15,6 +15,10 @@ import "./follow-status.css";
 import "./profile-mobile-grid.css";
 import "./passport.css";
 import "./gameday.css";
+import "./loading.css";
+import "./feed-performance.css";
+import "./desktop-feed.css";
+import "./inbox-friends.css";
 import ThemeBoot from "./theme-boot";
 
 export const metadata: Metadata = {
