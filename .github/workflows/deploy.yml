@@ -55,13 +55,28 @@ jobs:
           mkdir "$build_dir/previous"
           pm2 stop wildball
           stopped=true
+          # Older npm-managed restarts can leave a Next.js child holding 3000.
+          # Only terminate listeners owned by this application's directory.
+          for server_pid in $(ss -ltnp 'sport = :3000' | sed -n 's/.*pid=\([0-9]*\).*/\1/p'); do
+            if [ "$(readlink "/proc/$server_pid/cwd")" != /var/www/wildball ]; then
+              echo "Port 3000 belongs to another application; refusing to stop it."
+              exit 1
+            fi
+            if ! tr '\0' ' ' < "/proc/$server_pid/cmdline" | grep -q next-server; then
+              echo "Port 3000 listener is not the expected Next.js server."
+              exit 1
+            fi
+            kill -TERM "$server_pid"
+          done
+          for attempt in $(seq 1 20); do
+            if ! ss -ltn 'sport = :3000' | grep -q ':3000'; then break; fi
+            sleep 0.5
+          done
           for directory in .next node_modules; do
             if [ -d "$directory" ]; then mv "$directory" "$build_dir/previous/$directory"; fi
             mv "$build_dir/$directory" "$directory"
           done
           pm2 restart wildball --update-env
+          node scripts/check-deployment.mjs http://localhost:3000
           activated=true
           pm2 save
-          pm2 describe wildball
-          ss -ltnp
-          find .next/static/chunks/app -maxdepth 1 -name 'page-*.js' -printf '%f\n'
