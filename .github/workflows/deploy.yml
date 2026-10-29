@@ -13,6 +13,9 @@ jobs:
   deploy:
     name: Deploy to Hostinger VPS
     runs-on: [self-hosted, wildball-vps]
+    env:
+      # PM2's web process must survive the runner's orphan-process cleanup.
+      RUNNER_TRACKING_ID: ""
 
     steps:
       - name: Deploy the application
@@ -59,3 +62,6 @@ jobs:
           pm2 restart wildball --update-env
           activated=true
           pm2 save
+          pm2 describe wildball
+          ss -ltnp
+          find .next/static/chunks/app -maxdepth 1 -name 'page-*.js' -printf '%f\n'
