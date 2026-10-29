@@ -4,6 +4,7 @@ client-preview/
 node_modules/
 .npm-cache/
 .next/
+.deploy-build.*/
 next-dev.log
 next-dev-error.log
 demo-accounts.local.csv

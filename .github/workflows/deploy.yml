@@ -23,7 +23,7 @@ jobs:
 
           # Build away from the running server. Rebuilding its .next directory
           # removes chunks that the live process is still advertising to users.
-          build_dir=$(mktemp -d /var/www/wildball-build.XXXXXX)
+          build_dir=$(mktemp -d /var/www/wildball/.deploy-build.XXXXXX)
           stopped=false
           activated=false
           cleanup() {
