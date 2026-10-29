@@ -17,10 +17,45 @@ jobs:
     steps:
       - name: Deploy the application
         run: |
-          set -e
+          set -euo pipefail
           cd /var/www/wildball
           git pull --ff-only origin main
-          npm ci
-          npm run build
+
+          # Build away from the running server. Rebuilding its .next directory
+          # removes chunks that the live process is still advertising to users.
+          build_dir=$(mktemp -d /var/www/wildball-build.XXXXXX)
+          stopped=false
+          activated=false
+          cleanup() {
+            if [ "$stopped" = true ] && [ "$activated" = false ]; then
+              for directory in .next node_modules; do
+                if [ -d "$build_dir/previous/$directory" ]; then
+                  rm -rf "/var/www/wildball/$directory"
+                  mv "$build_dir/previous/$directory" "/var/www/wildball/$directory"
+                fi
+              done
+              pm2 restart wildball --update-env || true
+            fi
+            rm -rf "$build_dir"
+          }
+          trap cleanup EXIT
+          git archive HEAD | tar -x -C "$build_dir"
+          for env_file in .env .env.local .env.production .env.production.local; do
+            if [ -f "$env_file" ]; then cp "$env_file" "$build_dir/$env_file"; fi
+          done
+          (cd "$build_dir" && npm ci && npm run build)
+
+          # Keep old hashed assets available for tabs opened before the deploy.
+          if [ -d .next/static ]; then
+            cp -an .next/static/. "$build_dir/.next/static/"
+          fi
+          mkdir "$build_dir/previous"
+          pm2 stop wildball
+          stopped=true
+          for directory in .next node_modules; do
+            if [ -d "$directory" ]; then mv "$directory" "$build_dir/previous/$directory"; fi
+            mv "$build_dir/$directory" "$directory"
+          done
           pm2 restart wildball --update-env
+          activated=true
           pm2 save
