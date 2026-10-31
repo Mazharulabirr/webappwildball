@@ -23,7 +23,7 @@ function setup(saveData = false) {
   class Observer {
     constructor(callback, options) { this.callback = callback; this.options = options; observers.push(this); }
     observe() {} disconnect() { this.disconnected = true; }
-    trigger(value) { this.callback([{ isIntersecting: value }]); }
+    trigger(value, ratio = value ? 1 : 0) { this.callback([{ isIntersecting: value, intersectionRatio: ratio }]); }
   }
   const document = { hidden: false,
     addEventListener(_, callback) { listeners.add(callback); },
@@ -49,7 +49,7 @@ test('distant clips make no media request; nearby clips buffer and unload when f
   assert.equal(video.preload, 'auto');
   assert.equal(video.plays, 0);
   observers[1].trigger(true);
-  assert.equal(video.plays, 0, 'cover remains visible before autoplay');
+  assert.equal(video.plays, 1, 'visible video plays without an artificial delay');
   flushTimers();
   assert.equal(video.paused, false);
   observers[0].trigger(false);
@@ -74,18 +74,31 @@ test('background tabs pause playback and observers/listeners clean up on unmount
   assert.ok(observers.every(observer => observer.disconnected));
 });
 
-test('scrolling away cancels pending autoplay and restores the cover', () => {
+test('scrolling away pauses and keeps the last video frame visible', () => {
   const { video, observers, cleanup, flushTimers } = setup();
   observers[1].trigger(true);
   video.dataset.playing = 'true';
   observers[1].trigger(false);
   flushTimers();
-  assert.equal(video.plays, 0);
-  assert.equal(video.dataset.playing, undefined);
+  assert.equal(video.plays, 1);
+  assert.equal(video.paused, true);
+  assert.equal(video.dataset.playing, 'true');
   observers[1].trigger(true);
   cleanup();
   flushTimers();
+  assert.equal(video.plays, 2);
+  assert.equal(video.paused, true);
+});
+
+test('a sliver of an adjacent video cannot take over playback', () => {
+  const { video, observers, cleanup } = setup();
+  observers[1].trigger(true, .2);
   assert.equal(video.plays, 0);
+  observers[1].trigger(true, .6);
+  assert.equal(video.plays, 1);
+  observers[1].trigger(true, .4);
+  assert.equal(video.paused, true);
+  cleanup();
 });
 
 test('data saver disables lookahead buffering', () => {

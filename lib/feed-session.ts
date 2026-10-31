@@ -1,6 +1,19 @@
 type Post = { id: string; created_at: string };
 type Range = { pivot: string; after: string | null; wrapped: boolean; limit: number };
 
+export function shuffleFeedPosts<T extends { id: string }>(items: T[], previousFirst: string | null = null, random = Math.random): T[] {
+  const posts = [...items];
+  for (let index = posts.length - 1; index > 0; index--) {
+    const other = Math.floor(random() * (index + 1));
+    [posts[index], posts[other]] = [posts[other], posts[index]];
+  }
+  if (posts.length > 1 && posts[0].id === previousFirst) {
+    const other = 1 + Math.floor(random() * (posts.length - 1));
+    [posts[0], posts[other]] = [posts[other], posts[0]];
+  }
+  return posts;
+}
+
 /** A feed shuffle seed, not an authentication token; works over local HTTP too. */
 export function createFeedPivot(random: () => number = Math.random) {
   return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, character => {
@@ -40,9 +53,9 @@ export function createFeedSession<T extends Post>(pivot: string) {
           }
         }
       }
-      // Three recent posts are spaced among discoveries; the newest leads the feed.
+      // Keep recent uploads in discovery without pinning one to the first slot.
       const mixed = [...discovery];
-      fresh.forEach((post, index) => mixed.splice(Math.min(index * 4, mixed.length), 0, post));
+      fresh.forEach((post, index) => mixed.splice(Math.min(2 + index * 4, mixed.length), 0, post));
       const posts = mixed.filter(post => { if (seen.has(post.id)) return false; seen.add(post.id); return true; });
       after = nextAfter; wrapped = nextWrapped; exhausted = nextExhausted; started = true;
       return { posts, hasMore: !exhausted };

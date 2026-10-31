@@ -11,3 +11,18 @@
 @media(max-width:720px){#feed .post .copy h1{font-size:20px;letter-spacing:-.4px;margin-top:8px}#feed .post .copy p{font-size:10px}}
 @media(max-width:720px){#feed .post-latest{contain-intrinsic-size:auto max(520px,calc(100svh - 139px))}#feed .post-latest .actions strong{backdrop-filter:none}}
 @media(min-width:721px){#feed .post{height:clamp(720px,88svh,960px)}#feed .post-latest{contain-intrinsic-size:auto clamp(720px,88svh,960px)}}
+
+/* The document owns scrolling; snap rules must live on its root. */
+html.video-feed-page{--feed-top:88px;--feed-bottom:0px;scroll-behavior:smooth;scroll-snap-type:y proximity;scroll-padding-top:var(--feed-top)}
+/* Preserve touch/trackpad momentum instead of stopping at every card. */
+html.video-feed-page #feed>.post,html.video-feed-page #feed>.ad{scroll-snap-align:start!important;scroll-snap-stop:normal;content-visibility:visible}
+html.video-feed-page #feed>.post{height:calc(100svh - var(--feed-top) - var(--feed-bottom) - 24px);min-height:0}
+html.video-feed-page #feed .post.photo .hero{opacity:1;mix-blend-mode:normal}
+html.video-feed-page #feed .post .veil{pointer-events:none}
+html.video-feed-page #feed .post .feed-video-cover{object-fit:contain;background:#101413}
+@media(max-width:720px){
+  html.video-feed-page{--feed-top:139px;--feed-bottom:calc(84px + env(safe-area-inset-bottom));scroll-snap-type:y proximity}
+  html.video-feed-page #feed{padding:var(--feed-top) 0 var(--feed-bottom)}
+  html.video-feed-page #feed>.post{height:calc(100svh - var(--feed-top) - var(--feed-bottom));margin-bottom:0;border-radius:0}
+}
+@media(prefers-reduced-motion:reduce){html.video-feed-page{scroll-behavior:auto;scroll-snap-type:y proximity}}

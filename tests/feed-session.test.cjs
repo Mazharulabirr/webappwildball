@@ -8,6 +8,18 @@ vm.runInNewContext(ts.transpileModule(readFileSync('lib/feed-session.ts', 'utf8'
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
 }).outputText, { exports: moduleUnderTest.exports, module: moduleUnderTest });
 const { createFeedPivot, createFeedSession } = moduleUnderTest.exports;
+const { shuffleFeedPosts } = moduleUnderTest.exports;
+
+test('refresh shuffles without mutation and avoids the previous first video', () => {
+  const items = [{ id: 'a' }, { id: 'b' }, { id: 'c' }];
+  const shuffled = shuffleFeedPosts(items, 'a', () => .999);
+  assert.notEqual(shuffled[0].id, 'a');
+  assert.deepEqual(Array.from(shuffled, post => post.id).sort(), ['a', 'b', 'c']);
+  assert.deepEqual(items.map(post => post.id), ['a', 'b', 'c']);
+  assert.notDeepEqual(Array.from(shuffleFeedPosts(items, null, () => 0), p => p.id), Array.from(shuffleFeedPosts(items, null, () => .999), p => p.id));
+  assert.equal(shuffleFeedPosts([], 'a').length, 0);
+  assert.equal(shuffleFeedPosts([{ id: 'a' }], 'a')[0].id, 'a');
+});
 const collection = Array.from({ length: 43 }, (_, index) => ({ id: String(index).padStart(3, '0'), created_at: String(index) }));
 const recent = async () => [...collection].reverse().slice(0, 3);
 const query = async ({ pivot, after, wrapped, limit }) => collection.filter(post =>
@@ -21,11 +33,13 @@ test('feed seed works without crypto or secure-context browser APIs', () => {
   assert.notEqual(createFeedPivot(() => .2), createFeedPivot(() => .8));
 });
 
-test('newest post leads; different reload seeds discover different videos', async () => {
+test('different sessions start with different discoveries instead of pinning the newest post', async () => {
   const a = await createFeedSession('010').next(recent, query);
   const b = await createFeedSession('030').next(recent, query);
-  assert.equal(a.posts[0].id, '042');
-  assert.equal(b.posts[0].id, '042');
+  assert.equal(a.posts[0].id, '010');
+  assert.equal(b.posts[0].id, '030');
+  assert.ok(a.posts.some(post => post.id === '042'));
+  assert.ok(b.posts.some(post => post.id === '042'));
   assert.notDeepEqual(Array.from(a.posts, p => p.id), Array.from(b.posts, p => p.id));
 });
 
@@ -52,7 +66,7 @@ test('failed wrap query can retry without losing cursor positions', async () => 
   };
   await assert.rejects(session.next(recent, flaky), /Offline/);
   const result = await session.next(recent, flaky);
-  assert.equal(result.posts[0].id, '042');
+  assert.equal(result.posts[0].id, '040');
   assert.ok(result.posts.some(post => post.id === '040'));
   assert.ok(result.posts.some(post => post.id === '000'));
 });

@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import FeedVideo from "./feed-video";
 import FeedSoundButton from "./feed-sound-button";
 import { readTheme } from "../lib/theme";
-import { createFeedPivot, createFeedSession } from "../lib/feed-session";
+import { createFeedPivot, createFeedSession, shuffleFeedPosts } from "../lib/feed-session";
 import { createClient as createSupabaseClient } from "../lib/supabase/client";
 import type { User } from "@supabase/supabase-js";
 const LanguageDialog = dynamic(() => import("./language-dialog"));
@@ -63,6 +63,33 @@ const languages = ["English (US)", "বাংলা", "English (UK)", "हिन
 
 export default function Home() {
   const router = useRouter();
+  useEffect(() => {
+    document.documentElement.classList.add("video-feed-page");
+    const navigate = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || target?.closest("input, textarea, select, button, a, [contenteditable], [role=dialog]") || document.querySelector(".modal-backdrop, .language-dialog-backdrop, #profile-view.open, #auth-view.open")) return;
+      if (!["ArrowDown", "ArrowUp", " "].includes(event.key)) return;
+      const cards = Array.from(document.querySelectorAll<HTMLElement>("#feed > .post, #feed > .ad"));
+      if (!cards.length) return;
+      const top = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--feed-top")) || 0;
+      const current = cards.reduce((best, card, index) => Math.abs(card.getBoundingClientRect().top - top) < Math.abs(cards[best].getBoundingClientRect().top - top) ? index : best, 0);
+      if (event.key === " ") {
+        const video = cards[current].querySelector("video");
+        if (!video) return;
+        event.preventDefault();
+        if (video.paused) void video.play().catch(() => undefined); else video.pause();
+        return;
+      }
+      event.preventDefault();
+      const next = cards[Math.max(0, Math.min(cards.length - 1, current + (event.key === "ArrowDown" ? 1 : -1)))];
+      next.scrollIntoView({ block: "start", behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth" });
+    };
+    window.addEventListener("keydown", navigate);
+    return () => {
+      document.documentElement.classList.remove("video-feed-page");
+      window.removeEventListener("keydown", navigate);
+    };
+  }, []);
   const [feedMuted, setFeedMuted] = useState(true);
   const toggleFeedSound = () => {
     const nextMuted = !feedMuted;
@@ -208,7 +235,14 @@ export default function Home() {
       });
       feedHasMore.current = result.hasMore;
       setHasMore(feedHasMore.current);
-      const ordered = append ? shuffle(result.posts) : result.posts;
+      let previousFirst: string | null = null;
+      if (!append) {
+        try { previousFirst = window.localStorage.getItem("wildball-feed-first"); } catch { /* Storage can be disabled. */ }
+      }
+      const ordered = shuffleFeedPosts(result.posts, previousFirst);
+      if (!append && ordered.length) {
+        try { window.localStorage.setItem("wildball-feed-first", ordered[0].id); } catch { /* Random ordering still works without storage. */ }
+      }
       setLivePosts(current => {
         const seen = new Set(append ? current.map(post => post.id) : []);
         return [...(append ? current : []), ...ordered.filter(post => { if (seen.has(post.id)) return false; seen.add(post.id); return true; })];
